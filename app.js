@@ -10,8 +10,12 @@ const lookupRoutes = require("./routes/lookups");
 
 require("dotenv").config();
 
-//middleware
-app.use(cors());
+// CORS configuration
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || "http://localhost:3000", // Replace with your React app's URL
+  optionsSuccessStatus: 200,
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // MongoDB connection
