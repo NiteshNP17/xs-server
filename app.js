@@ -12,7 +12,7 @@ require("dotenv").config();
 
 // CORS configuration
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || "http://localhost:3000", // Replace with your React app's URL
+  origin: process.env.FRONTEND_URL || "http://localhost:5173", // Replace with your React app's URL
   optionsSuccessStatus: 200,
 };
 app.use(cors(corsOptions));
