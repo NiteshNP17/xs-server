@@ -172,4 +172,31 @@ router.delete("/:code", async (req, res) => {
   }
 });
 
+//search route
+router.get("/search", async (req, res) => {
+  const query = req.query.q;
+
+  const searchQuery = [
+    {
+      $search: {
+        index: "default",
+        text: {
+          query: query,
+          path: {
+            wildcard: "*",
+          },
+        },
+      },
+    },
+  ];
+
+  try {
+    const searchResults = await Movies.aggregate(searchQuery).toArray();
+    res.json(searchResults);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 module.exports = router;
