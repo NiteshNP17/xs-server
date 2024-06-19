@@ -82,26 +82,38 @@ router.get("/search", async (req, res) => {
       },
     },
     {
-      $project: {
-        code: 1,
-        title: 1,
-        cast: 1,
-        maleCast: 1,
-        release: 1,
-        overrides: 1,
+      $facet: {
+        searchResults: [
+          {
+            $project: {
+              code: 1,
+              title: 1,
+              cast: 1,
+              maleCast: 1,
+              release: 1,
+              overrides: 1,
+            },
+          },
+          {
+            $skip: skip,
+          },
+          {
+            $limit: limit,
+          },
+        ],
+        totalCount: [
+          {
+            $count: "count",
+          },
+        ],
       },
-    },
-    {
-      $skip: skip,
-    },
-    {
-      $limit: limit,
     },
   ];
 
   try {
-    const searchResults = await Movies.aggregate(searchQuery);
-    const totalCount = searchResults.length;
+    const result = await Movies.aggregate(searchQuery);
+    const searchResults = result[0].searchResults;
+    const totalCount = result[0].totalCount[0]?.count || 0;
     const totalPages = Math.ceil(totalCount / limit);
 
     res.json({ searchResults, totalPages });
