@@ -62,6 +62,55 @@ router.get("/", async (req, res) => {
   }
 });
 
+//search route
+router.get("/search", async (req, res) => {
+  const query = req.query.q;
+  const page = parseInt(req.query.page) || 1; // Get the page number from the query string, default to 1
+  const limit = 24;
+  const skip = (page - 1) * limit;
+
+  const searchQuery = [
+    {
+      $search: {
+        index: "default",
+        text: {
+          query: query,
+          path: {
+            wildcard: "*",
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        code: 1,
+        title: 1,
+        cast: 1,
+        maleCast: 1,
+        release: 1,
+        overrides: 1,
+      },
+    },
+    {
+      $skip: skip,
+    },
+    {
+      $limit: limit,
+    },
+  ];
+
+  try {
+    const searchResults = await Movies.aggregate(searchQuery);
+    const totalCount = searchResults.length;
+    const totalPages = Math.ceil(totalCount / limit);
+
+    res.json({ searchResults, totalPages });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 // Get a specific movie by ID
 router.get("/:code", getMovie, (req, res) => {
   res.json(res.movie);
@@ -169,33 +218,6 @@ router.delete("/:code", async (req, res) => {
       return res.status(400).json({ message: "Invalid movie code" });
     }
     res.status(500).json({ message: err.message });
-  }
-});
-
-//search route
-router.get("/search", async (req, res) => {
-  const query = req.query.q;
-
-  const searchQuery = [
-    {
-      $search: {
-        index: "default",
-        text: {
-          query: query,
-          path: {
-            wildcard: "*",
-          },
-        },
-      },
-    },
-  ];
-
-  try {
-    const searchResults = await Movies.aggregate(searchQuery).toArray();
-    res.json(searchResults);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Internal server error" });
   }
 });
 
