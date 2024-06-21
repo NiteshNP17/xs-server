@@ -46,7 +46,7 @@ router.get("/", async (req, res) => {
     const sortOption = buildSortOption(sortQuery);
     const totalMovies = await Movies.countDocuments(filter);
     const movies = await Movies.find(filter)
-      .select("code title cast maleCast release overrides")
+      .select("code title cast maleCast release opt overrides")
       .sort(sortOption)
       .skip((page - 1) * limit)
       .limit(limit);
@@ -91,6 +91,7 @@ router.get("/search", async (req, res) => {
               cast: 1,
               maleCast: 1,
               release: 1,
+              opt: 1,
               overrides: 1,
             },
           },
