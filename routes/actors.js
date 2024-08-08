@@ -122,19 +122,37 @@ router.post("/", async (req, res) => {
 
 // update an actor
 router.put("/:name", getActor, async (req, res) => {
-  bindActorData(res.actor, req.body);
+  if (!res.actor) {
+    return res.status(404).json({ message: "Actor not found" });
+  }
+
+  const originalActorName = res.actor.name;
+
   try {
-    if (req.body.name) {
-      // Update the actor's name in all the movies
-      const Movie = require("./models/movies");
-      const updatedMovies = await Movie.updateMany(
-        { cast: res.actor.name },
-        { $set: { "cast.$": req.body.name } }
+    // Update the actor's details
+    bindActorData(res.actor, req.body);
+
+    // Save the updated actor
+    const updatedActor = await res.actor.save();
+
+    // Update the actor's name in all the movies
+    if (originalActorName !== updatedActor.name) {
+      const Movies = require("../models/movies");
+      const actMovie = await Movies.updateMany(
+        { cast: originalActorName },
+        { $set: { "cast.$": updatedActor.name } }
       );
-      console.log(`Updated ${updatedMovies.nModified} movies.`);
+
+      console.log(
+        "original actor name - ",
+        originalActorName,
+        "updated name - ",
+        updatedActor.name,
+        ", movie: ",
+        actMovie
+      );
     }
 
-    const updatedActor = await res.actor.save();
     res.json(updatedActor);
   } catch (err) {
     res.status(400).json({ message: err.message });
