@@ -124,8 +124,6 @@ router.post("/", async (req, res) => {
 router.put("/:name", getActor, async (req, res) => {
   bindActorData(res.actor, req.body);
   try {
-    const updatedActor = await res.actor.save();
-
     if (req.body.name) {
       // Update the actor's name in all the movies
       const Movie = require("./models/movies");
@@ -136,6 +134,7 @@ router.put("/:name", getActor, async (req, res) => {
       console.log(`Updated ${updatedMovies.nModified} movies.`);
     }
 
+    const updatedActor = await res.actor.save();
     res.json(updatedActor);
   } catch (err) {
     res.status(400).json({ message: err.message });
