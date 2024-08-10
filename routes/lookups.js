@@ -22,14 +22,13 @@ router.get("/pre/:pre", async (req, res) => {
 
 router.post("/pre", async (req, res) => {
   const prefix = new Prefixes();
-  const { pre, prePre, is3Digits, isDmb, isPrestige, maxNum } = req.body;
+  const { pre, prePre, isHq, isDmb, maxNum } = req.body;
   prefix.pre = pre;
 
   if (prePre) prefix.prePre = prePre;
   prefix.maxNum = maxNum ? maxNum : 9000;
-  if (is3Digits) prefix.is3Digits = true;
+  if (isHq) prefix.isHq = true;
   if (isDmb) prefix.isDmb = true;
-  if (isPrestige) prefix.studio = "Prestige";
 
   try {
     const newPreData = await prefix.save();

@@ -5,7 +5,7 @@ const prefixesSchema = new mongoose.Schema({
   maxNum: Number,
   prePre: String,
   studio: String,
-  is3Digits: Boolean,
+  isHq: Boolean,
   isDmb: Boolean,
 });
 
