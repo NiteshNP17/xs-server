@@ -2,49 +2,61 @@
 const express = require("express");
 const router = express.Router();
 const Actors = require("../models/actors"); // Adjust the path as needed
+const Movies = require("../models/movies");
+const mongoose = require("mongoose");
+
+function sortOptionBuilder(reqSort) {
+  let sortOption = {};
+
+  if (reqSort === "heightdesc") {
+    sortOption = { height: -1 };
+  } else if (reqSort === "heightasc") {
+    sortOption = { height: 1 };
+  } else if (reqSort === "ageasc") {
+    sortOption = { dob: -1 };
+  } else if (reqSort === "agedesc") {
+    sortOption = { dob: 1 };
+  } else if (reqSort === "nameasc") {
+    sortOption = { name: 1 };
+  } else if (reqSort === "namedesc") {
+    sortOption = { name: -1 };
+  } else if (reqSort === "addedasc") {
+    sortOption = { _id: -1 };
+  } else if (reqSort === "addeddesc") {
+    sortOption = {};
+  } else if (reqSort === "moviecountdesc") {
+    sortOption = { numMovies: -1 };
+  } else if (reqSort === "moviecountasc") {
+    sortOption = { numMovies: 1 };
+  }
+  return sortOption;
+}
 
 // Get all actors
 router.get("/", async (req, res) => {
-  const page = parseInt(req.query.page) || 1; // Get the page number from the query string, default to 1
-  const limit = 30; // Number of entries per page
-  const isMale = req.query.male !== undefined; // Check if the
-  let sortOption = {};
-
-  if (req.query.sort === "heightdesc") {
-    sortOption = { height: -1 };
-  } else if (req.query.sort === "heightasc") {
-    sortOption = { height: 1 };
-  } else if (req.query.sort === "ageasc") {
-    sortOption = { dob: -1 };
-  } else if (req.query.sort === "agedesc") {
-    sortOption = { dob: 1 };
-  } else if (req.query.sort === "nameasc") {
-    sortOption = { name: 1 };
-  } else if (req.query.sort === "namedesc") {
-    sortOption = { name: -1 };
-  } else if (req.query.sort === "addedasc") {
-    sortOption = { _id: -1 };
-  } else if (req.query.sort === "addeddesc") {
-    sortOption = {};
-  } else if (req.query.sort === "moviecountdesc") {
-    sortOption = { numMovies: -1 };
-  } else if (req.query.sort === "moviecountasc") {
-    sortOption = { numMovies: 1 };
-  }
+  const isList = req.query.list !== undefined;
+  const searchQuery = req.query.q ? new RegExp(`\\b${req.query.q}`, "i") : null;
+  const sortOption = sortOptionBuilder(req.query.sort);
 
   try {
-    const filterCondition = isMale ? { isMale: true } : { isMale: null }; // Filter based on the isMale query parameter
-    const totalActors = await Actors.countDocuments(filterCondition); // Get the total number of actors based on the filter condition
+    const filterCondition = isList
+      ? { name: searchQuery }
+      : {
+          img500: { $ne: null },
+        };
 
-    const actors = await Actors.aggregate([
+    let aggregationPipeline = [
       { $match: filterCondition },
       {
         $lookup: {
           from: "movies",
-          let: { actorName: "$name" },
+          let: { actorId: "$_id" },
           pipeline: [
-            { $unwind: "$cast" },
-            { $match: { $expr: { $eq: ["$$actorName", "$cast"] } } },
+            {
+              $match: {
+                $expr: { $in: ["$$actorId", "$cast"] },
+              },
+            },
             { $group: { _id: null, count: { $sum: 1 } } },
           ],
           as: "movies",
@@ -55,17 +67,42 @@ router.get("/", async (req, res) => {
           numMovies: { $ifNull: [{ $arrayElemAt: ["$movies.count", 0] }, 0] },
         },
       },
-      // { $project: { name: 1, dob: 1, isMale: 1, height: 1, numMovies: 1 } },
       { $sort: sortOption },
-      { $skip: (page - 1) * limit },
-      { $limit: limit },
-    ]);
+    ];
 
-    res.json({
-      actors,
-      currentPage: page,
-      totalPages: Math.ceil(totalActors / limit), // Calculate the total number of pages
-    });
+    if (isList) {
+      aggregationPipeline.push(
+        {
+          $project: {
+            name: 1,
+            slug: 1,
+            dob: 1,
+            // numMovies: 1, // Keep this for sorting purposes
+          },
+        },
+        { $limit: 6 }
+      );
+    } else {
+      const page = parseInt(req.query.page) || 1;
+      const limit = 24;
+      const totalActors = await Actors.countDocuments(filterCondition);
+
+      aggregationPipeline.push(
+        { $skip: (page - 1) * limit },
+        { $limit: limit }
+      );
+
+      const actors = await Actors.aggregate(aggregationPipeline);
+
+      return res.json({
+        actors,
+        currentPage: page,
+        totalPages: Math.ceil(totalActors / limit),
+      });
+    }
+
+    const actors = await Actors.aggregate(aggregationPipeline);
+    res.json({ actors });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -103,9 +140,7 @@ function bindActorData(actor, data) {
     actor.dob = dobDate.toISOString().split("T")[0]; // YYYY-MM-DD
   }
   if (data.height) actor.height = data.height;
-  if (data.activeFrom) actor.activeFrom = data.activeFrom.trim();
-  if (data.isMale) actor.isMale = true;
-  if (data.img500) actor.img500 = data.img500.trim().toLowerCase();
+  if (data.img500) actor.img500 = data.img500.trim();
 }
 
 // add a new actor
@@ -121,51 +156,65 @@ router.post("/", async (req, res) => {
 });
 
 // update an actor
-router.put("/:name", getActor, async (req, res) => {
-  if (!res.actor) {
-    return res.status(404).json({ message: "Actor not found" });
-  }
-
-  const originalActorName = res.actor.name;
-
+router.put("/:slug", async (req, res) => {
   try {
-    // Update the actor's details
-    bindActorData(res.actor, req.body);
+    const actor = await Actors.findOne({ slug: req.params.slug });
 
-    // Save the updated actor
-    const updatedActor = await res.actor.save();
-
-    // Update the actor's name in all the movies
-    if (originalActorName !== updatedActor.name) {
-      const Movies = require("../models/movies");
-      const actMovie = await Movies.updateMany(
-        { cast: originalActorName },
-        { $set: { "cast.$": updatedActor.name } }
-      );
-
-      console.log(
-        "original actor name - ",
-        originalActorName,
-        "updated name - ",
-        updatedActor.name,
-        ", movie: ",
-        actMovie
-      );
+    if (!actor) {
+      return res.status(404).json({ message: "Actor not found" });
     }
 
+    bindActorData(actor, req.body);
+
+    const updatedActor = await actor.save();
     res.json(updatedActor);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
 });
 
-//delete an actor
+// Delete an actor and remove their references from movies (if any)
 router.delete("/:name", async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    await Actors.deleteOne({ name: req.params.name });
-    res.json({ message: "Actor deleted" });
+    // Find the actor
+    const actor = await Actors.findOne({ name: req.params.name }).session(
+      session
+    );
+
+    if (!actor) {
+      await session.abortTransaction();
+      return res.status(404).json({ message: "Actor not found" });
+    }
+
+    // Remove actor from all movies' cast arrays (if any)
+    const updateResult = await Movies.updateMany(
+      { cast: actor._id },
+      { $pull: { cast: actor._id } },
+      { session }
+    );
+
+    // Delete the actor
+    await Actors.deleteOne({ _id: actor._id }).session(session);
+
+    await session.commitTransaction();
+
+    if (updateResult.modifiedCount > 0) {
+      res.json({
+        message: `Actor deleted and removed from ${updateResult.modifiedCount} movie(s)`,
+      });
+    } else {
+      res.json({
+        message: "Actor deleted. No movies were referencing this actor.",
+      });
+    }
   } catch (err) {
+    await session.abortTransaction();
     res.status(500).json({ message: err.message });
+  } finally {
+    session.endSession();
   }
 });
 

@@ -1,14 +1,14 @@
-//models/actors.js
+// models/series.js
 const mongoose = require("mongoose");
-const actorsSchema = new mongoose.Schema({
+
+const seriesSchema = new mongoose.Schema({
   slug: { type: String, unique: true },
   name: String,
-  dob: String,
-  height: Number,
-  img500: String,
+  studio: String,
+  thumbs: String,
 });
 
-actorsSchema.pre("save", function (next) {
+seriesSchema.pre("save", function (next) {
   if (!this.slug) {
     // Get the ObjectId as a string
     const idString = this._id.toString();
@@ -18,4 +18,4 @@ actorsSchema.pre("save", function (next) {
   next();
 });
 
-module.exports = mongoose.model("Actor", actorsSchema);
+module.exports = mongoose.model("Serie", seriesSchema);

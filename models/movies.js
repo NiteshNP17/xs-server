@@ -1,15 +1,16 @@
+//models/movies.js
 const mongoose = require("mongoose");
 
 const moviesSchema = new mongoose.Schema({
   code: String,
   title: String,
-  cast: Array,
+  cast: [{ type: mongoose.Schema.Types.ObjectId, ref: "Actor" }],
   maleCast: Array,
   release: String,
   runtime: Number,
   tags: Array,
   opt: Array,
-  series: String,
+  series: { type: mongoose.Schema.Types.ObjectId, ref: "Serie" },
   overrides: {
     cover: String,
     preview: String,

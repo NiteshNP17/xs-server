@@ -6,16 +6,17 @@ const Movies = require("../models/movies"); // Adjust the path as needed
 const Actors = require("../models/actors"); // Adjust the path as needed
 
 router.get("/pre/:pre", async (req, res) => {
-  const codenum = parseInt(req.query.codenum);
+  const codenum = req.query.codenum ? parseInt(req.query.codenum) : null;
 
-  const prefixData = await Prefixes.findOne(
-    {
-      pre: req.params.pre,
-      $or: [{ maxNum: { $exists: false } }, { maxNum: { $gte: codenum } }],
-    },
-    null,
-    { sort: { maxNum: 1 } }
-  );
+  let query = { pre: req.params.pre };
+
+  if (codenum !== null) {
+    query.maxNum = { $gte: codenum };
+  }
+
+  const prefixData = await Prefixes.findOne(query, null, {
+    sort: { maxNum: 1 },
+  });
 
   res.json(prefixData ? prefixData : "notFound");
 });
@@ -35,16 +36,6 @@ router.post("/pre", async (req, res) => {
     res.status(201).json(newPreData);
   } catch (err) {
     res.status(400).json({ message: err.message });
-  }
-});
-
-//get list of series names
-router.get("/series", async (req, res) => {
-  try {
-    const series = await Movies.distinct("series");
-    res.json(series);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
   }
 });
 

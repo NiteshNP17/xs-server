@@ -7,6 +7,9 @@ const app = express();
 const movieRoutes = require("./routes/movies");
 const actorRoutes = require("./routes/actors");
 const lookupRoutes = require("./routes/lookups");
+const studioRoutes = require("./routes/studios");
+const seriesRoutes = require("./routes/series");
+const albumRoutes = require("./routes/albums");
 
 require("dotenv").config();
 
@@ -28,6 +31,9 @@ mongoose
 app.use("/movies", movieRoutes);
 app.use("/actors", actorRoutes);
 app.use("/lookups", lookupRoutes);
+app.use("/studios", studioRoutes);
+app.use("/series", seriesRoutes);
+app.use("/albums", albumRoutes);
 
 // Start the server
 const PORT = process.env.PORT || 5000;
