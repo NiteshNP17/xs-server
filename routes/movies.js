@@ -92,7 +92,7 @@ router.get("/", async (req, res) => {
     const movies = await Movies.find(filter)
       // .select("code title cast maleCast release opt overrides")
       .populate("cast", "slug name dob") // Populate the 'cast' field with 'name' and 'dob' from the Actor model
-      .populate("series", "slug name") // Populate the 'cast' field with 'name' and 'dob' from the Actor model
+      .populate("series") // Populate the 'cast' field with 'name' and 'dob' from the Actor model
       .sort(sortOption)
       .skip((page - 1) * limit)
       .limit(limit);
