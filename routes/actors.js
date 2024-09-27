@@ -57,7 +57,12 @@ router.get("/", async (req, res) => {
                 $expr: { $in: ["$$actorId", "$cast"] },
               },
             },
-            { $group: { _id: null, count: { $sum: 1 } } },
+            {
+              $group: {
+                _id: null,
+                count: { $sum: 1 },
+              },
+            },
           ],
           as: "movies",
         },
@@ -75,7 +80,6 @@ router.get("/", async (req, res) => {
         {
           $project: {
             name: 1,
-            slug: 1,
             dob: 1,
             // numMovies: 1, // Keep this for sorting purposes
           },
@@ -156,9 +160,9 @@ router.post("/", async (req, res) => {
 });
 
 // update an actor
-router.put("/:slug", async (req, res) => {
+router.patch("/:id", async (req, res) => {
   try {
-    const actor = await Actors.findOne({ slug: req.params.slug });
+    const actor = await Actors.findById(req.params.id);
 
     if (!actor) {
       return res.status(404).json({ message: "Actor not found" });
@@ -169,7 +173,10 @@ router.put("/:slug", async (req, res) => {
     const updatedActor = await actor.save();
     res.json(updatedActor);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    if (err.name === "CastError") {
+      return res.status(400).json({ message: "Invalid actor ID" });
+    }
+    res.status(500).json({ message: err.message });
   }
 });
 

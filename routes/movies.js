@@ -97,19 +97,8 @@ router.get("/", async (req, res) => {
       .skip((page - 1) * limit)
       .limit(limit);
 
-    // Transform the response to include actor names and dobs
-    const transformedMovies = movies.map((movie) => ({
-      ...movie.toObject(),
-      cast: movie.cast.map((actor) => ({
-        _id: actor._id,
-        slug: actor.slug,
-        name: actor.name,
-        dob: actor.dob,
-      })),
-    }));
-
     res.json({
-      movies: transformedMovies,
+      movies,
       currentPage: page,
       totalPages: Math.ceil(totalMovies / limit),
       totalMovies,
@@ -236,7 +225,7 @@ function bindMovieData(movie, data) {
     movie.code = data.code.toLowerCase();
   }
   if (data.title) {
-    movie.title = data.title.toLowerCase().trim();
+    movie.title = data.title.trim();
   }
   if (data.cast) {
     movie.cast = JSON.parse(data.cast);
