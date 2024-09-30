@@ -66,7 +66,7 @@ const buildFilter = async (queries) => {
 const buildSortOption = (sortQuery) => {
   switch (sortQuery) {
     case "release":
-      return { release: -1 }; // Sort by release date in descending order (newest first)
+      return { release: -1, code: -1 }; // Sort by release date in descending order (newest first)
     default:
       return { _id: -1 }; // Default sort by _id in descending order (newest first)
   }
