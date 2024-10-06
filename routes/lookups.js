@@ -25,6 +25,7 @@ router.post("/label", async (req, res) => {
   const newLabel = new Labels(req.body);
   newLabel.isHq = req.body.isHq ? true : null;
   newLabel.isDmb = req.body.isDmb ? true : null;
+  newLabel.isVr = req.body.isVr ? true : null;
   newLabel.maxNum = req.body.maxNum ? req.body.maxNum : 9000;
 
   try {
