@@ -6,6 +6,7 @@ const labelsSchema = new mongoose.Schema({
   prefix: String,
   imgPre: String,
   name: String,
+  is3digits: Boolean,
   isHq: Boolean,
   isDmb: Boolean,
   isVr: Boolean,

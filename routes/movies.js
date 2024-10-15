@@ -246,24 +246,15 @@ function bindMovieData(movie, data) {
   if (data.tags) {
     movie.tags = data.tags.split(",").map((val) => val.trim().toLowerCase());
   }
-  if (data.opt) {
-    movie.opt = data.opt.split(",").map((val) => val.trim().toLowerCase());
-  }
+  movie.opt = data.opt.split(",").map((val) => val.trim().toLowerCase());
   if (data.series) {
     movie.series = data.series; // This will now be an ObjectId
   }
-  if (data.cover || data.preview) {
-    // Create the overrides object if it doesn't exist
-    if (!movie.overrides) {
-      movie.overrides = {};
-    }
-    if (data.cover) {
-      movie.overrides.cover = data.cover.trim();
-    }
-    if (data.preview) {
-      movie.overrides.preview = data.preview.trim();
-    }
+  if (!movie.overrides) {
+    movie.overrides = {};
   }
+  movie.overrides.cover = data.cover.trim();
+  movie.overrides.preview = data.preview.trim();
 }
 
 // Create a new movie

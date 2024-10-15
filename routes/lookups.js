@@ -23,6 +23,7 @@ router.get("/label/:label", async (req, res) => {
 
 router.post("/label", async (req, res) => {
   const newLabel = new Labels(req.body);
+  newLabel.is3digits = req.body.is3digits ? true : null;
   newLabel.isHq = req.body.isHq ? true : null;
   newLabel.isDmb = req.body.isDmb ? true : null;
   newLabel.isVr = req.body.isVr ? true : null;
@@ -75,6 +76,76 @@ router.get("/scrape", async (req, res) => {
         } else if (labelSpan === "Runtime:") {
           runtime = convertToMinutes(valueSpan);
         }
+      }
+    });
+
+    res.json({
+      title,
+      relDate,
+      runtime,
+    });
+  } catch (error) {
+    console.error("Scraping error:", error);
+    res.status(500).json({ error: "An error occurred while scraping" });
+  }
+});
+
+router.get("/scrape-jt", async (req, res) => {
+  try {
+    const { code } = req.query;
+    const [codeLabel, codeNum] = code.split("-");
+    const codeNumPadded = codeNum.padStart(5, "0");
+
+    if (!code) {
+      return res.status(400).json({ error: "code is required" });
+    }
+
+    const labelData = await Labels.findOne(
+      { label: codeLabel, maxNum: { $gte: parseInt(codeNum) } },
+      null,
+      {
+        sort: { maxNum: 1 },
+      }
+    );
+
+    const url = `https://javtrailers.com/video/${
+      labelData?.prefix || ""
+    }${codeLabel}${codeNumPadded}`;
+
+    const response = await axios.get(url);
+    const html = response.data;
+    const $ = cheerio.load(html);
+
+    // Extract title from h1 tag
+    let title = $("h1").first().text().trim();
+    title = title.slice(code.length + 1);
+
+    // Extract relDate and runtime
+    const pElements = $("p.mb-1");
+    let relDate = "";
+    let runtime = "";
+
+    pElements.each((index, element) => {
+      const $element = $(element);
+      const spanText = $element.find("span").text().trim();
+
+      if (spanText === "Release Date:") {
+        relDate = $element
+          .contents()
+          .filter(function () {
+            return this.type === "text";
+          })
+          .text()
+          .trim();
+      } else if (spanText === "Duration:") {
+        runtime = $element
+          .contents()
+          .filter(function () {
+            return this.type === "text";
+          })
+          .text()
+          .trim()
+          .split(" ")[0];
       }
     });
 
