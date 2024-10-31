@@ -59,6 +59,11 @@ const buildFilter = async (queries) => {
     filter.code = { $in: labelPatterns };
   }
 
+  if (queries.labelQuery) {
+    const labelPattern = new RegExp(`^${queries.labelQuery}-`);
+    filter.code = labelPattern;
+  }
+
   return filter;
 };
 
@@ -67,6 +72,10 @@ const buildSortOption = (sortQuery) => {
   switch (sortQuery) {
     case "release":
       return { release: -1, code: -1 }; // Sort by release date in descending order (newest first)
+    case "code":
+      return { code: -1 };
+    case "codeAsc":
+      return { code: 1 };
     default:
       return { _id: -1 }; // Default sort by _id in descending order (newest first)
   }
@@ -83,6 +92,7 @@ router.get("/", async (req, res) => {
     seriesQuery: req.query.series,
     tagsQuery: req.query.tags,
     studioQuery: req.query.studio,
+    labelQuery: req.query.label,
   };
 
   try {
