@@ -263,7 +263,7 @@ function bindMovieData(movie, data) {
   if (!movie.overrides) {
     movie.overrides = {};
   }
-  movie.overrides.cover = data.cover.trim();
+  movie.overrides.cover = data.cover ? data.cover.trim() : null;
   movie.overrides.preview = data.preview.trim();
 }
 

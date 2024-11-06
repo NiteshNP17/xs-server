@@ -112,6 +112,14 @@ router.get("/scrape-jt", async (req, res) => {
       labelData?.prefix || ""
     }${codeLabel}${codeNumPadded}`;
 
+    //generate poster url
+    const posterUrl = `https://pics.pornfhd.com/s/mono/movie/adult/${
+      labelData?.imgPre || labelData?.prefix || ""
+    }${codeLabel}${codeNum}/${
+      labelData?.imgPre || labelData?.prefix || ""
+    }${codeLabel}${codeNum}pl.jpg`;
+    // }${codeLabel}${labelData?.is3digits ? codeNum : codeNumPadded}pl.jpg`;
+
     const response = await axios.get(url);
     const html = response.data;
     const $ = cheerio.load(html);
@@ -153,6 +161,7 @@ router.get("/scrape-jt", async (req, res) => {
       title,
       relDate,
       runtime,
+      posterUrl,
     });
   } catch (error) {
     console.error("Scraping error:", error);
