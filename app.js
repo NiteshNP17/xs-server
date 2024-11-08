@@ -10,6 +10,7 @@ const lookupRoutes = require("./routes/lookups");
 const studioRoutes = require("./routes/studios");
 const seriesRoutes = require("./routes/series");
 const albumRoutes = require("./routes/albums");
+const labelRoutes = require("./routes/labels");
 
 require("dotenv").config();
 
@@ -34,6 +35,7 @@ app.use("/lookups", lookupRoutes);
 app.use("/studios", studioRoutes);
 app.use("/series", seriesRoutes);
 app.use("/albums", albumRoutes);
+app.use("/labels", labelRoutes);
 
 // Start the server
 const PORT = process.env.PORT || 5000;

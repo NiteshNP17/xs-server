@@ -5,38 +5,6 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const Labels = require("../models/labels");
 
-router.get("/label/:label", async (req, res) => {
-  const codenum = req.query.codenum ? parseInt(req.query.codenum) : null;
-
-  let query = { label: req.params.label };
-
-  if (codenum !== null) {
-    query.maxNum = { $gte: codenum };
-  }
-
-  const labelData = await Labels.findOne(query, null, {
-    sort: { maxNum: 1 },
-  });
-
-  res.json(labelData ? labelData : "notFound");
-});
-
-router.post("/label", async (req, res) => {
-  const newLabel = new Labels(req.body);
-  newLabel.is3digits = req.body.is3digits ? true : null;
-  newLabel.isHq = req.body.isHq ? true : null;
-  newLabel.isDmb = req.body.isDmb ? true : null;
-  newLabel.isVr = req.body.isVr ? true : null;
-  newLabel.maxNum = req.body.maxNum ? req.body.maxNum : 9000;
-
-  try {
-    const newLabelData = await newLabel.save();
-    res.status(201).json(newLabelData);
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
-});
-
 function convertToMinutes(timeString) {
   const [hours, minutes, seconds] = timeString.split(":").map(Number);
   return Math.floor(hours * 60 + minutes + seconds / 60);
@@ -45,9 +13,29 @@ function convertToMinutes(timeString) {
 router.get("/scrape", async (req, res) => {
   try {
     const { code } = req.query;
+    const [codeLabel, codeNum] = code.split("-");
+    let posterUrl;
 
     if (!code) {
       return res.status(400).json({ error: "code is required" });
+    }
+
+    if (codeLabel !== "fc2") {
+      const labelData = await Labels.findOne(
+        { label: codeLabel, maxNum: { $gte: parseInt(codeNum) } },
+        null,
+        {
+          sort: { maxNum: 1 },
+        }
+      );
+
+      //generate poster url
+      posterUrl = `https://pics.pornfhd.com/s/mono/movie/adult/${
+        labelData?.imgPre || labelData?.prefix || ""
+      }${codeLabel}${codeNum}/${
+        labelData?.imgPre || labelData?.prefix || ""
+      }${codeLabel}${codeNum}pl.jpg`;
+      // }${codeLabel}${labelData?.is3digits ? codeNum : codeNumPadded}pl.jpg`;
     }
 
     const url = `https://njav.tv/en/v/${code}`;
@@ -83,6 +71,7 @@ router.get("/scrape", async (req, res) => {
       title,
       relDate,
       runtime,
+      posterUrl,
     });
   } catch (error) {
     console.error("Scraping error:", error);
