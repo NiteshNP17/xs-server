@@ -4,7 +4,7 @@ const router = express.Router();
 const axios = require("axios");
 const cheerio = require("cheerio");
 const Labels = require("../models/labels");
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
 
 function convertToMinutes(timeString) {
   const [hours, minutes, seconds] = timeString.split(":").map(Number);
