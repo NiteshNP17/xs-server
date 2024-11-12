@@ -106,10 +106,10 @@ router.get("/scrape-jt", async (req, res) => {
     await page.goto(url, { waitUntil: 'networkidle0' });
 
     // Extract title from h1 tag
-    const title = await page.$eval('h1', el => el.textContent.trim().slice(code.length + 1));
+    const title = await page.$eval('h1', (el, code) => el.textContent.trim().slice(code.length + 1), code);
 
     // Extract relDate and runtime
-    const pElements = await page.$$eval('p.mb-1', els =>
+    const pElements = await page.$$eval('p.mb-1', (els, code) =>
       els.reduce((acc, el) => {
         const spanText = el.querySelector('span').textContent.trim();
         if (spanText === 'Release Date:') {
@@ -118,7 +118,8 @@ router.get("/scrape-jt", async (req, res) => {
           acc.runtime = el.textContent.trim().replace('Duration:', '').trim().split(' ')[0];
         }
         return acc;
-      }, { relDate: '', runtime: '' })
+      }, { relDate: '', runtime: '' }),
+      code
     );
 
     await browser.close();
@@ -133,5 +134,4 @@ router.get("/scrape-jt", async (req, res) => {
     res.status(500).json({ error: 'An error occurred while scraping' });
   }
 });
-
 module.exports = router;
