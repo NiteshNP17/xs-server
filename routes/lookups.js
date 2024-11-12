@@ -115,7 +115,7 @@ router.get("/scrape-jt", async (req, res) => {
 
     res.json({
       title,
-      ...pElements,
+      //...pElements,
       posterUrl,
     });
   } catch (error) {
