@@ -4,6 +4,7 @@ const router = express.Router();
 const axios = require("axios");
 const cheerio = require("cheerio");
 const Labels = require("../models/labels");
+const puppeteer = require('puppeteer');
 
 function convertToMinutes(timeString) {
   const [hours, minutes, seconds] = timeString.split(":").map(Number);
@@ -92,69 +93,44 @@ router.get("/scrape-jt", async (req, res) => {
     const labelData = await Labels.findOne(
       { label: codeLabel, maxNum: { $gte: parseInt(codeNum) } },
       null,
-      {
-        sort: { maxNum: 1 },
-      }
+      { sort: { maxNum: 1 } }
     );
 
-    const url = `https://javtrailers.com/video/${
-      labelData?.prefix || ""
-    }${codeLabel}${codeNumPadded}`;
+    const url = `https://javtrailers.com/video/${labelData?.prefix || ""}${codeLabel}${codeNumPadded}`;
 
-    //generate poster url
-    const posterUrl = `https://pics.pornfhd.com/s/mono/movie/adult/${
-      labelData?.imgPre || labelData?.prefix || ""
-    }${codeLabel}${codeNum}/${
-      labelData?.imgPre || labelData?.prefix || ""
-    }${codeLabel}${codeNum}pl.jpg`;
-    // }${codeLabel}${labelData?.is3digits ? codeNum : codeNumPadded}pl.jpg`;
+    // Generate poster URL
+    const posterUrl = `https://pics.pornfhd.com/s/mono/movie/adult/${labelData?.imgPre || labelData?.prefix || ""}${codeLabel}${codeNum}/${labelData?.imgPre || labelData?.prefix || ""}${codeLabel}${codeNum}pl.jpg`;
 
-    const response = await axios.get(url);
-    const html = response.data;
-    const $ = cheerio.load(html);
+    const browser = await puppeteer.launch();
+    const page = await browser.newPage();
+    await page.goto(url, { waitUntil: 'networkidle0' });
 
     // Extract title from h1 tag
-    let title = $("h1").first().text().trim();
-    title = title.slice(code.length + 1);
+    const title = await page.$eval('h1', el => el.textContent.trim().slice(code.length + 1));
 
     // Extract relDate and runtime
-    const pElements = $("p.mb-1");
-    let relDate = "";
-    let runtime = "";
+    const pElements = await page.$$eval('p.mb-1', els =>
+      els.reduce((acc, el) => {
+        const spanText = el.querySelector('span').textContent.trim();
+        if (spanText === 'Release Date:') {
+          acc.relDate = el.textContent.trim().replace('Release Date:', '').trim();
+        } else if (spanText === 'Duration:') {
+          acc.runtime = el.textContent.trim().replace('Duration:', '').trim().split(' ')[0];
+        }
+        return acc;
+      }, { relDate: '', runtime: '' })
+    );
 
-    pElements.each((index, element) => {
-      const $element = $(element);
-      const spanText = $element.find("span").text().trim();
-
-      if (spanText === "Release Date:") {
-        relDate = $element
-          .contents()
-          .filter(function () {
-            return this.type === "text";
-          })
-          .text()
-          .trim();
-      } else if (spanText === "Duration:") {
-        runtime = $element
-          .contents()
-          .filter(function () {
-            return this.type === "text";
-          })
-          .text()
-          .trim()
-          .split(" ")[0];
-      }
-    });
+    await browser.close();
 
     res.json({
       title,
-      relDate,
-      runtime,
+      ...pElements,
       posterUrl,
     });
   } catch (error) {
-    console.error("Scraping error:", error);
-    res.status(500).json({ error: "An error occurred while scraping" });
+    console.error('Scraping error:', error);
+    res.status(500).json({ error: 'An error occurred while scraping' });
   }
 });
 
