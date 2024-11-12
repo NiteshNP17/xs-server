@@ -96,7 +96,7 @@ router.get("/scrape-jt", async (req, res) => {
       { sort: { maxNum: 1 } }
     );
 
-    const url = `https://javtrailers.com/video/${labelData?.prefix || ""}${codeLabel}${codeNumPadded}`;
+    const url = `https://javdatabase.com/movies/${code}`;
 
     // Generate poster URL
     const posterUrl = `https://pics.pornfhd.com/s/mono/movie/adult/${labelData?.imgPre || labelData?.prefix || ""}${codeLabel}${codeNum}/${labelData?.imgPre || labelData?.prefix || ""}${codeLabel}${codeNum}pl.jpg`;
@@ -105,17 +105,21 @@ router.get("/scrape-jt", async (req, res) => {
     const page = await browser.newPage();
     await page.goto(url, { waitUntil: 'networkidle0' });
 
-    // Extract title from h1 tag
-    const title = await page.$eval('h1', (el, code) => el.textContent?.trim().slice(code.length + 1), code);
+    // Extract title
+    const titleElement = await page.$('p.mb-1 b:contains("Title:")');    const title = await page.evaluate((el) => el.nextElementSibling.textContent.trim(), titleElement);
 
-    // Extract relDate and runtime
-    
+    // Extract relDate
+    const relDateElement = await page.$('p.mb-1 b:contains("Release Date:")');
+    const relDate = await page.evaluate((el) => el.nextElementSibling.textContent.trim(), relDateElement)
+    // Extract runtime
+    const runtimeElement = await page.$('p.mb-1 b:contains("Runtime:")');
+    const runtime = await page.evaluate((el) => el.nextElementSibling.textContent.trim().split(' ')[0], runtimeElement);
 
     await browser.close();
 
     res.json({
       title,
-      //...pElements,
+      relDate,      runtime,
       posterUrl,
     });
   } catch (error) {
@@ -123,4 +127,5 @@ router.get("/scrape-jt", async (req, res) => {
     res.status(500).json({ error: 'An error occurred while scraping' });
   }
 });
+
 module.exports = router;
