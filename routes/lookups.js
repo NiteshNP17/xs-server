@@ -106,16 +106,16 @@ router.get("/scrape-jt", async (req, res) => {
     await page.goto(url, { waitUntil: 'networkidle0' });
 
     // Extract title from h1 tag
-    const title = await page.$eval('h1', (el, code) => el.textContent.trim().slice(code.length + 1), code);
+    const title = await page.$eval('h1', (el, code) => el.textContent?.trim().slice(code.length + 1), code);
 
     // Extract relDate and runtime
     const pElements = await page.$$eval('p.mb-1', (els, code) =>
       els.reduce((acc, el) => {
-        const spanText = el.querySelector('span').textContent.trim();
+        const spanText = el.querySelector('span').textContent?.trim();
         if (spanText === 'Release Date:') {
-          acc.relDate = el.textContent.trim().replace('Release Date:', '').trim();
+          acc.relDate = el.textContent?.trim().replace('Release Date:', '').trim();
         } else if (spanText === 'Duration:') {
-          acc.runtime = el.textContent.trim().replace('Duration:', '').trim().split(' ')[0];
+          acc.runtime = el.textContent?.trim().replace('Duration:', '').trim().split(' ')[0];
         }
         return acc;
       }, { relDate: '', runtime: '' }),
