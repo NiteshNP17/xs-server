@@ -80,6 +80,9 @@ router.get("/scrape", async (req, res) => {
   }
 });
 
+const puppeteer = require('puppeteer');
+const Labels = require('./models/Labels');
+
 router.get("/scrape-jt", async (req, res) => {
   try {
     const { code } = req.query;
@@ -105,21 +108,31 @@ router.get("/scrape-jt", async (req, res) => {
     const page = await browser.newPage();
     await page.goto(url, { waitUntil: 'networkidle0' });
 
-    // Extract title
-    const titleElement = await page.$('p.mb-1 b:contains("Title:")');    const title = await page.evaluate((el) => el.nextElementSibling.textContent.trim(), titleElement);
+    // Extract data using evaluateHandle to get access to DOM nodes
+    const data = await page.evaluate(() => {
+      const paragraphs = document.querySelectorAll('p.mb-1');
+      let title = '', relDate = '', runtime = '';
 
-    // Extract relDate
-    const relDateElement = await page.$('p.mb-1 b:contains("Release Date:")');
-    const relDate = await page.evaluate((el) => el.nextElementSibling.textContent.trim(), relDateElement)
-    // Extract runtime
-    const runtimeElement = await page.$('p.mb-1 b:contains("Runtime:")');
-    const runtime = await page.evaluate((el) => el.nextElementSibling.textContent.trim().split(' ')[0], runtimeElement);
+      paragraphs.forEach(p => {
+        const boldText = p.querySelector('b')?.textContent || '';
+        const fullText = p.textContent;
+        
+        if (boldText.includes('Title:')) {
+          title = fullText.replace(boldText, '').trim();
+        } else if (boldText.includes('Release Date:')) {
+          relDate = fullText.replace(boldText, '').trim();
+        } else if (boldText.includes('Runtime:')) {
+          runtime = fullText.replace(boldText, '').trim().split(' ')[0];
+        }
+      });
+
+      return { title, relDate, runtime };
+    });
 
     await browser.close();
 
     res.json({
-      title,
-      relDate,      runtime,
+      ...data,
       posterUrl,
     });
   } catch (error) {
