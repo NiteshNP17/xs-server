@@ -97,22 +97,113 @@ router.get("/", async (req, res) => {
 
   try {
     const filter = await buildFilter(filterQueries);
-    const sortOption = buildSortOption(req.query.sort);
-    const totalMovies = await Movies.countDocuments(filter);
-    const movies = await Movies.find(filter)
-      // .select("code title cast maleCast release opt overrides")
-      .populate("cast", "slug name dob") // Populate the 'cast' field with 'name' and 'dob' from the Actor model
-      .populate("series") // Populate the 'cast' field with 'name' and 'dob' from the Actor model
-      .sort(sortOption)
-      .skip((page - 1) * limit)
-      .limit(limit);
 
-    res.json({
-      movies,
-      currentPage: page,
-      totalPages: Math.ceil(totalMovies / limit),
-      totalMovies,
-    });
+    if (req.query.random !== undefined) {
+      const movie = await Movies.aggregate([
+        { $match: filter },
+        { $sample: { size: 1 } },
+        {
+          $lookup: {
+            from: "actors",
+            localField: "cast",
+            foreignField: "_id",
+            as: "cast",
+          },
+        },
+        {
+          $lookup: {
+            from: "series",
+            localField: "series",
+            foreignField: "_id",
+            as: "series",
+          },
+        },
+        {
+          $unwind: {
+            path: "$series",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $project: {
+            code: 1,
+            title: 1,
+            "cast._id": 1,
+            "cast.name": 1,
+            "cast.dob": 1,
+            maleCast: 1,
+            release: 1,
+            runtime: 1,
+            tags: 1,
+            opt: 1,
+            "series._id": 1,
+            "series.slug": 1,
+            "series.name": 1,
+            overrides: 1,
+          },
+        },
+      ]);
+
+      res.json({
+        movies: movie,
+        currentPage: 1,
+        totalPages: 1,
+        totalMovies: 1,
+      });
+    } else {
+      const sortOption = buildSortOption(req.query.sort);
+      const totalMovies = await Movies.countDocuments(filter);
+      const movies = await Movies.find(filter)
+        // .select("code title cast maleCast release opt overrides")
+        .populate("cast", "name dob") // Populate the 'cast' field with 'name' and 'dob' from the Actor model
+        .populate("series", "name slug thumbs") // Populate the 'cast' field with 'name' and 'dob' from the Actor model
+        .sort(sortOption)
+        .skip((page - 1) * limit)
+        .limit(limit);
+
+      let response = {
+        movies,
+        currentPage: page,
+        totalPages: Math.ceil(totalMovies / limit),
+        totalMovies,
+      };
+
+      // Add actor statistics if studioQuery is present
+      if (filterQueries.studioQuery || filterQueries.labelQuery) {
+        const actorStats = await Movies.aggregate([
+          { $match: filter },
+          { $unwind: "$cast" },
+          {
+            $group: {
+              _id: "$cast",
+              numMovies: { $sum: 1 },
+            },
+          },
+          {
+            $lookup: {
+              from: "actors",
+              localField: "_id",
+              foreignField: "_id",
+              as: "actorInfo",
+            },
+          },
+          { $unwind: "$actorInfo" },
+          {
+            $project: {
+              _id: 1,
+              numMovies: 1,
+              name: "$actorInfo.name",
+            },
+          },
+          { $sort: { numMovies: -1, name: 1 } },
+          { $limit: 10 },
+        ]);
+
+        response.actorStats = actorStats;
+      }
+
+      res.json(response);
+    }
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -263,7 +354,10 @@ function bindMovieData(movie, data) {
   if (!movie.overrides) {
     movie.overrides = {};
   }
-  movie.overrides.cover = data.cover ? data.cover.trim() : null;
+  movie.overrides.cover =
+    data.cover && !data.cover.startsWith("http://javpop")
+      ? data.cover.trim()
+      : null;
   movie.overrides.preview = data.preview.trim();
 }
 

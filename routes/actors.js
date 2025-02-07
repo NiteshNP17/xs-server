@@ -5,83 +5,152 @@ const Actors = require("../models/actors"); // Adjust the path as needed
 const Movies = require("../models/movies");
 const mongoose = require("mongoose");
 
-function sortOptionBuilder(reqSort) {
-  let sortOption = {};
-
-  if (reqSort === "heightdesc") {
-    sortOption = { height: -1 };
-  } else if (reqSort === "heightasc") {
-    sortOption = { height: 1 };
-  } else if (reqSort === "ageasc") {
-    sortOption = { dob: -1 };
-  } else if (reqSort === "agedesc") {
-    sortOption = { dob: 1 };
-  } else if (reqSort === "nameasc") {
-    sortOption = { name: 1 };
-  } else if (reqSort === "namedesc") {
-    sortOption = { name: -1 };
-  } else if (reqSort === "addedasc") {
-    sortOption = { _id: -1 };
-  } else if (reqSort === "addeddesc") {
-    sortOption = {};
-  } else if (reqSort === "moviecountdesc") {
-    sortOption = { numMovies: -1 };
-  } else if (reqSort === "moviecountasc") {
-    sortOption = { numMovies: 1 };
-  }
-  return sortOption;
-}
-
 // Get all actors
 router.get("/", async (req, res) => {
   const isList = req.query.list !== undefined;
+  const isRandom = req.query.random !== undefined;
   const searchQuery = req.query.q ? new RegExp(`\\b${req.query.q}`, "i") : null;
-  const sortOption = sortOptionBuilder(req.query.sort);
+  const reqSort = req.query.sort || "name";
+  const sortDirection = req.query.dir === "desc" ? -1 : 1;
+  const sortOption = { [reqSort]: sortDirection };
 
   try {
+    // Base match condition
     const filterCondition = isList
       ? { name: searchQuery }
-      : {
-          img500: { $ne: null },
-        };
+      : !isRandom
+      ? { img500: { $ne: null } }
+      : {};
 
-    let aggregationPipeline = [
-      { $match: filterCondition },
-      {
-        $lookup: {
-          from: "movies",
-          let: { actorId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $in: ["$$actorId", "$cast"] },
-              },
+    // Define lookup stages as reusable constants
+    const movieCountLookup = {
+      $lookup: {
+        from: "movies",
+        let: { actorId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $in: ["$$actorId", "$cast"] },
             },
-            {
-              $group: {
-                _id: null,
-                count: { $sum: 1 },
-              },
+          },
+          {
+            $group: {
+              _id: null,
+              count: { $sum: 1 },
             },
-          ],
-          as: "movies",
-        },
+          },
+        ],
+        as: "movies",
       },
+    };
+
+    // Base pipeline stages
+    const aggregationPipeline = [
+      { $match: filterCondition },
+      movieCountLookup,
       {
         $addFields: {
           numMovies: { $ifNull: [{ $arrayElemAt: ["$movies.count", 0] }, 0] },
         },
       },
-      { $sort: sortOption },
     ];
 
+    if (isRandom) {
+      aggregationPipeline.splice(1, 0, { $sample: { size: 1 } });
+    }
+
+    // Conditionally add more complex lookup stages based on requirements
+    const needsMovieDetails =
+      !isList || reqSort.includes("active") || reqSort.includes("age");
+
+    if (needsMovieDetails) {
+      aggregationPipeline.push(
+        // Latest movie lookup
+        {
+          $lookup: {
+            from: "movies",
+            let: { actorId: "$_id" },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $in: ["$$actorId", "$cast"] },
+                },
+              },
+              { $project: { release: 1 } },
+              { $sort: { release: -1 } },
+              { $limit: 1 },
+            ],
+            as: "latestMovie",
+          },
+        },
+        // {
+        //   $lookup: {
+        //     from: "movies",
+        //     let: { actorId: "$_id" },
+        //     pipeline: [
+        //       {
+        //         $match: {
+        //           $expr: { $in: ["$$actorId", "$cast"] },
+        //         },
+        //       },
+        //       { $project: { release: 1 } },
+        //       { $sort: { release: 1 } },
+        //       { $limit: 1 },
+        //     ],
+        //     as: "oldestMovie",
+        //   },
+        // },
+        {
+          $addFields: {
+            ageAtLatestRelease: {
+              $floor: {
+                $divide: [
+                  {
+                    $subtract: [
+                      {
+                        $toDate: { $arrayElemAt: ["$latestMovie.release", 0] },
+                      },
+                      { $toDate: "$dob" },
+                    ],
+                  },
+                  // Milliseconds in a year (1000 * 60 * 60 * 24 * 365.25)
+                  31557600000,
+                ],
+              },
+            },
+            // yearsActive: {
+            //   $floor: {
+            //     $divide: [
+            //       {
+            //         $subtract: [
+            //           {
+            //             $toDate: { $arrayElemAt: ["$latestMovie.release", 0] },
+            //           },
+            //           {
+            //             $toDate: { $arrayElemAt: ["$oldestMovie.release", 0] },
+            //           },
+            //         ],
+            //       },
+            //       // Milliseconds in a year (1000 * 60 * 60 * 24 * 365.25)
+            //       31557600000,
+            //     ],
+            //   },
+            // },
+          },
+        }
+      );
+    }
+
+    // Add sorting
+    aggregationPipeline.push({ $sort: sortOption });
+
+    // Projection and pagination
     if (isList) {
       aggregationPipeline.push(
         {
           $project: {
             name: 1,
             dob: 1,
-            // numMovies: 1, // Keep this for sorting purposes
           },
         },
         { $limit: 6 }
@@ -125,7 +194,122 @@ router.get("/:name", getActor, (req, res) => {
 async function getActor(req, res, next) {
   let actor;
   try {
-    actor = await Actors.findOne({ name: req.params.name });
+    actor = await Actors.aggregate([
+      { $match: { name: req.params.name } },
+      {
+        $lookup: {
+          from: "movies",
+          let: { actorId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $in: ["$$actorId", "$cast"] },
+              },
+            },
+            { $sort: { release: -1 } },
+            { $limit: 1 },
+            { $project: { _id: 0, release: 1 } }, // Explicitly project release
+          ],
+          as: "latestMovie",
+        },
+      },
+      {
+        $lookup: {
+          from: "movies",
+          let: { actorId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $in: ["$$actorId", "$cast"] },
+              },
+            },
+            { $sort: { release: 1 } },
+            { $limit: 1 },
+            { $project: { _id: 0, release: 1 } }, // Explicitly project release
+          ],
+          as: "oldestMovie",
+        },
+      },
+      {
+        $addFields: {
+          latestMovie: {
+            $ifNull: [{ $arrayElemAt: ["$latestMovie.release", 0] }, null],
+          },
+          oldestMovie: {
+            $ifNull: [{ $arrayElemAt: ["$oldestMovie.release", 0] }, null],
+          },
+          ageAtLatestRelease: {
+            $cond: {
+              if: {
+                $and: [
+                  { $ne: ["$dob", null] },
+                  {
+                    $ne: [{ $arrayElemAt: ["$latestMovie.release", 0] }, null],
+                  },
+                ],
+              },
+              then: {
+                $floor: {
+                  $divide: [
+                    {
+                      $subtract: [
+                        {
+                          $toDate: {
+                            $arrayElemAt: ["$latestMovie.release", 0],
+                          },
+                        },
+                        { $toDate: "$dob" },
+                      ],
+                    },
+                    // Milliseconds in a year (1000 * 60 * 60 * 24 * 365.25)
+                    31557600000,
+                  ],
+                },
+              },
+              else: null,
+            },
+          },
+          yearsActive: {
+            $cond: {
+              if: {
+                $and: [
+                  {
+                    $ne: [{ $arrayElemAt: ["$oldestMovie.release", 0] }, null],
+                  },
+                  {
+                    $ne: [{ $arrayElemAt: ["$latestMovie.release", 0] }, null],
+                  },
+                ],
+              },
+              then: {
+                $floor: {
+                  $divide: [
+                    {
+                      $subtract: [
+                        {
+                          $toDate: {
+                            $arrayElemAt: ["$latestMovie.release", 0],
+                          },
+                        },
+                        {
+                          $toDate: {
+                            $arrayElemAt: ["$oldestMovie.release", 0],
+                          },
+                        },
+                      ],
+                    },
+                    // Milliseconds in a year (1000 * 60 * 60 * 24 * 365.25)
+                    31557600000,
+                  ],
+                },
+              },
+              else: null,
+            },
+          },
+        },
+      },
+      { $limit: 1 },
+    ]);
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
@@ -145,6 +329,14 @@ function bindActorData(actor, data) {
   }
   if (data.height) actor.height = data.height;
   if (data.img500) actor.img500 = data.img500.trim();
+  if (data.sizes) {
+    let sizeSplit = data.sizes.trim().split("-");
+    actor.sizes = {
+      bust: sizeSplit[0],
+      waist: sizeSplit[1],
+      hips: sizeSplit[2],
+    };
+  }
 }
 
 // add a new actor

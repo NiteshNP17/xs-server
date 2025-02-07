@@ -4,6 +4,7 @@ const router = express.Router();
 const axios = require("axios");
 const cheerio = require("cheerio");
 const Labels = require("../models/labels");
+const puppeteer = require("puppeteer");
 
 function convertToMinutes(timeString) {
   const [hours, minutes, seconds] = timeString.split(":").map(Number);
@@ -13,12 +14,13 @@ function convertToMinutes(timeString) {
 router.get("/scrape", async (req, res) => {
   try {
     const { code } = req.query;
-    const [codeLabel, codeNum] = code.split("-");
-    let posterUrl;
 
     if (!code) {
       return res.status(400).json({ error: "code is required" });
     }
+    /*const [codeLabel, codeNum] = code.split("-");
+    let posterUrl;
+
 
     if (codeLabel !== "fc2") {
       const labelData = await Labels.findOne(
@@ -36,9 +38,9 @@ router.get("/scrape", async (req, res) => {
         labelData?.imgPre || labelData?.prefix || ""
       }${codeLabel}${codeNum}pl.jpg`;
       // }${codeLabel}${labelData?.is3digits ? codeNum : codeNumPadded}pl.jpg`;
-    }
+    }*/
 
-    const url = `https://njav.tv/en/v/${code}`;
+    const url = `https://123av.com/en/dm1/v/${code}`;
 
     const response = await axios.get(url);
     const html = response.data;
@@ -71,7 +73,7 @@ router.get("/scrape", async (req, res) => {
       title,
       relDate,
       runtime,
-      posterUrl,
+      // posterUrl,
     });
   } catch (error) {
     console.error("Scraping error:", error);
@@ -101,13 +103,13 @@ router.get("/scrape-jt", async (req, res) => {
       labelData?.prefix || ""
     }${codeLabel}${codeNumPadded}`;
 
-    //generate poster url
+    /*//generate poster url
     const posterUrl = `https://pics.pornfhd.com/s/mono/movie/adult/${
       labelData?.imgPre || labelData?.prefix || ""
     }${codeLabel}${codeNum}/${
       labelData?.imgPre || labelData?.prefix || ""
     }${codeLabel}${codeNum}pl.jpg`;
-    // }${codeLabel}${labelData?.is3digits ? codeNum : codeNumPadded}pl.jpg`;
+    // }${codeLabel}${labelData?.is3digits ? codeNum : codeNumPadded}pl.jpg`;*/
 
     const response = await axios.get(url);
     const html = response.data;
@@ -150,11 +152,93 @@ router.get("/scrape-jt", async (req, res) => {
       title,
       relDate,
       runtime,
-      posterUrl,
+      // posterUrl,
     });
   } catch (error) {
     console.error("Scraping error:", error);
     res.status(500).json({ error: "An error occurred while scraping" });
+  }
+});
+
+router.get("/ppt", async (req, res) => {
+  const { url } = req.query;
+
+  if (!url) {
+    return res.status(400).json({ error: "URL parameter is required" });
+  }
+
+  try {
+    // Validate URL format
+    new URL(url);
+
+    const browser = await puppeteer.launch({
+      headless: "new",
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+      ],
+    });
+
+    const page = await browser.newPage();
+
+    // Set timeout for navigation
+    await page.setDefaultNavigationTimeout(TIMEOUT);
+
+    // Navigate to the URL
+    await page.goto(url, {
+      waitUntil: "networkidle0",
+    });
+
+    // Get page content
+    const result = {
+      title: await page.title(),
+      text: await page.evaluate(() => document.body.innerText),
+      html: await page.content(),
+      links: await page.evaluate(() =>
+        Array.from(document.querySelectorAll("a")).map((link) => ({
+          text: link.innerText,
+          href: link.href,
+        }))
+      ),
+      images: await page.evaluate(() =>
+        Array.from(document.querySelectorAll("img")).map((img) => ({
+          src: img.src,
+          alt: img.alt,
+        }))
+      ),
+    };
+
+    await browser.close();
+
+    // Check content size
+    const contentSize = JSON.stringify(result).length;
+    if (contentSize > MAX_CONTENT_LENGTH) {
+      return res.status(413).json({
+        error: "Content too large",
+        size: contentSize,
+        limit: MAX_CONTENT_LENGTH,
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error("Scraping error:", error);
+
+    // Handle different types of errors
+    if (error instanceof TypeError && error.message.includes("Invalid URL")) {
+      return res.status(400).json({ error: "Invalid URL format" });
+    }
+
+    if (error.name === "TimeoutError") {
+      return res.status(504).json({ error: "Request timed out" });
+    }
+
+    res.status(500).json({
+      error: "Failed to scrape content",
+      message: error.message,
+    });
   }
 });
 

@@ -1,10 +1,49 @@
 //models/actors.js
 const mongoose = require("mongoose");
-const actorsSchema = new mongoose.Schema({
-  name: String,
-  dob: String,
-  height: Number,
-  img500: String,
-});
+const actorsSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      index: true, // For name sorting
+    },
+    dob: {
+      type: String,
+      index: true, // For date of birth sorting
+    },
+    sizes: {
+      bust: {
+        type: Number,
+        min: 20,
+        max: 200,
+      },
+      waist: {
+        type: Number,
+        min: 20,
+        max: 200,
+      },
+      hips: {
+        type: Number,
+        min: 20,
+        max: 200,
+      },
+    },
+    height: {
+      type: Number,
+      index: true, // For height sorting
+    },
+    img500: String,
+  },
+  {
+    // Add compound indexes for more complex sorting scenarios
+    indexes: [
+      { name: 1 }, // Ascending name sort
+      { height: -1 }, // Descending height sort
+      { dob: 1 }, // Ascending date of birth
+      // If you often sort by movie count or years active, you might want to add placeholders for those
+      { numMovies: -1 },
+      { yearsActive: 1 },
+    ],
+  }
+);
 
 module.exports = mongoose.model("Actor", actorsSchema);

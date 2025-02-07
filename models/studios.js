@@ -6,6 +6,8 @@ const studiosSchema = new mongoose.Schema({
   name: String,
   labels: Array,
   rank: Number,
+  logo: String,
+  web: String,
 });
 
 studiosSchema.pre("save", function (next) {
