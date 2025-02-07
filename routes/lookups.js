@@ -81,6 +81,9 @@ router.get("/scrape", async (req, res) => {
   }
 });
 
+const puppeteer = require("puppeteer");
+const Labels = require("./models/Labels");
+
 router.get("/scrape-jt", async (req, res) => {
   try {
     const { code } = req.query;
@@ -94,14 +97,10 @@ router.get("/scrape-jt", async (req, res) => {
     const labelData = await Labels.findOne(
       { label: codeLabel, maxNum: { $gte: parseInt(codeNum) } },
       null,
-      {
-        sort: { maxNum: 1 },
-      }
+      { sort: { maxNum: 1 } }
     );
 
-    const url = `https://javtrailers.com/video/${
-      labelData?.prefix || ""
-    }${codeLabel}${codeNumPadded}`;
+    const url = `https://javdatabase.com/movies/${code}`;
 
     /*//generate poster url
     const posterUrl = `https://pics.pornfhd.com/s/mono/movie/adult/${
@@ -115,38 +114,30 @@ router.get("/scrape-jt", async (req, res) => {
     const html = response.data;
     const $ = cheerio.load(html);
 
-    // Extract title from h1 tag
-    let title = $("h1").first().text().trim();
-    title = title.slice(code.length + 1);
+    // Extract data using evaluateHandle to get access to DOM nodes
+    const data = await page.evaluate(() => {
+      const paragraphs = document.querySelectorAll("p.mb-1");
+      let title = "",
+        relDate = "",
+        runtime = "";
 
-    // Extract relDate and runtime
-    const pElements = $("p.mb-1");
-    let relDate = "";
-    let runtime = "";
+      paragraphs.forEach((p) => {
+        const boldText = p.querySelector("b")?.textContent || "";
+        const fullText = p.textContent;
 
-    pElements.each((index, element) => {
-      const $element = $(element);
-      const spanText = $element.find("span").text().trim();
+        if (boldText.includes("Title:")) {
+          title = fullText.replace(boldText, "").trim();
+        } else if (boldText.includes("Release Date:")) {
+          relDate = fullText.replace(boldText, "").trim();
+        } else if (boldText.includes("Runtime:")) {
+          runtime = fullText.replace(boldText, "").trim().split(" ")[0];
+        }
+      });
 
-      if (spanText === "Release Date:") {
-        relDate = $element
-          .contents()
-          .filter(function () {
-            return this.type === "text";
-          })
-          .text()
-          .trim();
-      } else if (spanText === "Duration:") {
-        runtime = $element
-          .contents()
-          .filter(function () {
-            return this.type === "text";
-          })
-          .text()
-          .trim()
-          .split(" ")[0];
-      }
+      return { title, relDate, runtime };
     });
+
+    await browser.close();
 
     res.json({
       title,
@@ -154,6 +145,75 @@ router.get("/scrape-jt", async (req, res) => {
       runtime,
       // posterUrl,
     });
+  } catch (error) {
+    console.error("Scraping error:", error);
+    res.status(500).json({ error: "An error occurred while scraping" });
+  }
+});
+
+router.get("/ppt", async (req, res) => {
+  const { url } = req.query;
+
+  if (!url) {
+    return res.status(400).json({ error: "URL parameter is required" });
+  }
+
+  try {
+    // Validate URL format
+    new URL(url);
+
+    const browser = await puppeteer.launch({
+      headless: "new",
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+      ],
+    });
+
+    const page = await browser.newPage();
+
+    // Set timeout for navigation
+    await page.setDefaultNavigationTimeout(TIMEOUT);
+
+    // Navigate to the URL
+    await page.goto(url, {
+      waitUntil: "networkidle0",
+    });
+
+    // Get page content
+    const result = {
+      title: await page.title(),
+      text: await page.evaluate(() => document.body.innerText),
+      html: await page.content(),
+      links: await page.evaluate(() =>
+        Array.from(document.querySelectorAll("a")).map((link) => ({
+          text: link.innerText,
+          href: link.href,
+        }))
+      ),
+      images: await page.evaluate(() =>
+        Array.from(document.querySelectorAll("img")).map((img) => ({
+          src: img.src,
+          alt: img.alt,
+        }))
+      ),
+    };
+
+    await browser.close();
+
+    // Check content size
+    const contentSize = JSON.stringify(result).length;
+    if (contentSize > MAX_CONTENT_LENGTH) {
+      return res.status(413).json({
+        error: "Content too large",
+        size: contentSize,
+        limit: MAX_CONTENT_LENGTH,
+      });
+    }
+
+    res.json(result);
   } catch (error) {
     console.error("Scraping error:", error);
     res.status(500).json({ error: "An error occurred while scraping" });
