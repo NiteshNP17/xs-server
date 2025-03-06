@@ -9,10 +9,15 @@ const mongoose = require("mongoose");
 router.get("/", async (req, res) => {
   const isList = req.query.list !== undefined;
   const isRandom = req.query.random !== undefined;
-  const searchQuery = req.query.q ? new RegExp(`\\b${req.query.q}`, "i") : null;
   const reqSort = req.query.sort || "name";
   const sortDirection = req.query.dir === "desc" ? -1 : 1;
   const sortOption = { [reqSort]: sortDirection };
+  let searchQuery;
+
+  if (req.query.q) {
+    const reqQuery = req.query.q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    searchQuery = new RegExp(`\\b${reqQuery}`, "i");
+  }
 
   try {
     // Base match condition
@@ -22,131 +27,18 @@ router.get("/", async (req, res) => {
       ? { img500: { $ne: null } }
       : {};
 
-    // Define lookup stages as reusable constants
-    const movieCountLookup = {
-      $lookup: {
-        from: "movies",
-        let: { actorId: "$_id" },
-        pipeline: [
-          {
-            $match: {
-              $expr: { $in: ["$$actorId", "$cast"] },
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              count: { $sum: 1 },
-            },
-          },
-        ],
-        as: "movies",
-      },
-    };
-
-    // Base pipeline stages
-    const aggregationPipeline = [
-      { $match: filterCondition },
-      movieCountLookup,
-      {
-        $addFields: {
-          numMovies: { $ifNull: [{ $arrayElemAt: ["$movies.count", 0] }, 0] },
-        },
-      },
-    ];
+    const pipeline = [{ $match: filterCondition }];
 
     if (isRandom) {
-      aggregationPipeline.splice(1, 0, { $sample: { size: 1 } });
-    }
-
-    // Conditionally add more complex lookup stages based on requirements
-    const needsMovieDetails =
-      !isList || reqSort.includes("active") || reqSort.includes("age");
-
-    if (needsMovieDetails) {
-      aggregationPipeline.push(
-        // Latest movie lookup
-        {
-          $lookup: {
-            from: "movies",
-            let: { actorId: "$_id" },
-            pipeline: [
-              {
-                $match: {
-                  $expr: { $in: ["$$actorId", "$cast"] },
-                },
-              },
-              { $project: { release: 1 } },
-              { $sort: { release: -1 } },
-              { $limit: 1 },
-            ],
-            as: "latestMovie",
-          },
-        },
-        // {
-        //   $lookup: {
-        //     from: "movies",
-        //     let: { actorId: "$_id" },
-        //     pipeline: [
-        //       {
-        //         $match: {
-        //           $expr: { $in: ["$$actorId", "$cast"] },
-        //         },
-        //       },
-        //       { $project: { release: 1 } },
-        //       { $sort: { release: 1 } },
-        //       { $limit: 1 },
-        //     ],
-        //     as: "oldestMovie",
-        //   },
-        // },
-        {
-          $addFields: {
-            ageAtLatestRelease: {
-              $floor: {
-                $divide: [
-                  {
-                    $subtract: [
-                      {
-                        $toDate: { $arrayElemAt: ["$latestMovie.release", 0] },
-                      },
-                      { $toDate: "$dob" },
-                    ],
-                  },
-                  // Milliseconds in a year (1000 * 60 * 60 * 24 * 365.25)
-                  31557600000,
-                ],
-              },
-            },
-            // yearsActive: {
-            //   $floor: {
-            //     $divide: [
-            //       {
-            //         $subtract: [
-            //           {
-            //             $toDate: { $arrayElemAt: ["$latestMovie.release", 0] },
-            //           },
-            //           {
-            //             $toDate: { $arrayElemAt: ["$oldestMovie.release", 0] },
-            //           },
-            //         ],
-            //       },
-            //       // Milliseconds in a year (1000 * 60 * 60 * 24 * 365.25)
-            //       31557600000,
-            //     ],
-            //   },
-            // },
-          },
-        }
-      );
+      pipeline.splice(1, 0, { $sample: { size: 1 } });
     }
 
     // Add sorting
-    aggregationPipeline.push({ $sort: sortOption });
+    pipeline.push({ $sort: sortOption });
 
     // Projection and pagination
     if (isList) {
-      aggregationPipeline.push(
+      pipeline.push(
         {
           $project: {
             name: 1,
@@ -160,12 +52,9 @@ router.get("/", async (req, res) => {
       const limit = 24;
       const totalActors = await Actors.countDocuments(filterCondition);
 
-      aggregationPipeline.push(
-        { $skip: (page - 1) * limit },
-        { $limit: limit }
-      );
+      pipeline.push({ $skip: (page - 1) * limit }, { $limit: limit });
 
-      const actors = await Actors.aggregate(aggregationPipeline);
+      const actors = await Actors.aggregate(pipeline);
 
       return res.json({
         actors,
@@ -174,7 +63,7 @@ router.get("/", async (req, res) => {
       });
     }
 
-    const actors = await Actors.aggregate(aggregationPipeline);
+    const actors = await Actors.aggregate(pipeline);
     res.json({ actors });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -321,6 +210,7 @@ async function getActor(req, res, next) {
 // Helper function for data binding
 function bindActorData(actor, data) {
   if (data.name) actor.name = data.name.trim().toLowerCase();
+  if (data.cup) actor.cup = data.cup.trim().toLowerCase();
   if (data.dob) {
     const dobDate = new Date(data.dob.trim());
     // Set the time to 12:00:00.000 to prevent any potential time zone issues
@@ -372,7 +262,6 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-// Delete an actor and remove their references from movies (if any)
 router.delete("/:name", async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -388,10 +277,24 @@ router.delete("/:name", async (req, res) => {
       return res.status(404).json({ message: "Actor not found" });
     }
 
+    // Find movies with only this actor
+    const moviesWithOnlyThisActor = await Movies.find({
+      cast: {
+        $size: 1,
+        $elemMatch: { $eq: actor._id },
+      },
+    }).session(session);
+
     // Remove actor from all movies' cast arrays (if any)
     const updateResult = await Movies.updateMany(
       { cast: actor._id },
       { $pull: { cast: actor._id } },
+      { session }
+    );
+
+    // Delete movies that only had this actor
+    const deleteMoviesResult = await Movies.deleteMany(
+      { _id: { $in: moviesWithOnlyThisActor.map((movie) => movie._id) } },
       { session }
     );
 
@@ -400,15 +303,20 @@ router.delete("/:name", async (req, res) => {
 
     await session.commitTransaction();
 
-    if (updateResult.modifiedCount > 0) {
-      res.json({
-        message: `Actor deleted and removed from ${updateResult.modifiedCount} movie(s)`,
-      });
-    } else {
-      res.json({
-        message: "Actor deleted. No movies were referencing this actor.",
-      });
-    }
+    // Prepare response message
+    const response = {
+      message: `Actor deleted`,
+      movieUpdateDetails:
+        updateResult.modifiedCount > 0
+          ? `Removed from ${updateResult.modifiedCount} movie(s)`
+          : "No movies referenced this actor",
+      moviesDeleted:
+        deleteMoviesResult.deletedCount > 0
+          ? `Deleted ${deleteMoviesResult.deletedCount} movie(s) with only this actor`
+          : "No movies were deleted",
+    };
+
+    res.json(response);
   } catch (err) {
     await session.abortTransaction();
     res.status(500).json({ message: err.message });

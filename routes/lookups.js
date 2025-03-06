@@ -4,7 +4,7 @@ const router = express.Router();
 const axios = require("axios");
 const cheerio = require("cheerio");
 const Labels = require("../models/labels");
-// const puppeteer = require("puppeteer");
+const Tags = require("../models/tags"); // Adjust the path as needed
 
 function convertToMinutes(timeString) {
   const [hours, minutes, seconds] = timeString.split(":").map(Number);
@@ -94,10 +94,14 @@ router.get("/scrape-jt", async (req, res) => {
     const labelData = await Labels.findOne(
       { label: codeLabel, maxNum: { $gte: parseInt(codeNum) } },
       null,
-      { sort: { maxNum: 1 } }
+      {
+        sort: { maxNum: 1 },
+      }
     );
 
-    const url = `https://javdatabase.com/movies/${code}`;
+    const url = `https://javtrailers.com/video/${
+      labelData?.prefix || ""
+    }${codeLabel}${codeNumPadded}`;
 
     /*//generate poster url
     const posterUrl = `https://pics.pornfhd.com/s/mono/movie/adult/${
@@ -108,44 +112,172 @@ router.get("/scrape-jt", async (req, res) => {
     // }${codeLabel}${labelData?.is3digits ? codeNum : codeNumPadded}pl.jpg`;*/
 
     const response = await axios.get(url);
+
+    if (!response) console.error("No response from URL");
+
     const html = response.data;
     const $ = cheerio.load(html);
 
-    // Extract data using evaluateHandle to get access to DOM nodes
-    const data = await page.evaluate(() => {
-      const paragraphs = document.querySelectorAll("p.mb-1");
-      let title = "",
-        relDate = "",
-        runtime = "";
+    // Extract title from h1 tag
+    let title = $("h1").first().text().trim();
+    title = title.slice(code.length + 1);
 
-      paragraphs.forEach((p) => {
-        const boldText = p.querySelector("b")?.textContent || "";
-        const fullText = p.textContent;
+    // Extract relDate and runtime
+    const pElements = $("p.mb-1");
+    let relDate = "";
+    let runtime = "";
 
-        if (boldText.includes("Title:")) {
-          title = fullText.replace(boldText, "").trim();
-        } else if (boldText.includes("Release Date:")) {
-          relDate = fullText.replace(boldText, "").trim();
-        } else if (boldText.includes("Runtime:")) {
-          runtime = fullText.replace(boldText, "").trim().split(" ")[0];
-        }
-      });
+    pElements.each((index, element) => {
+      const $element = $(element);
+      const spanText = $element.find("span").text().trim();
 
-      return { title, relDate, runtime };
+      if (spanText === "Release Date:") {
+        relDate = $element
+          .contents()
+          .filter(function () {
+            return this.type === "text";
+          })
+          .text()
+          .trim();
+      } else if (spanText === "Duration:") {
+        runtime = $element
+          .contents()
+          .filter(function () {
+            return this.type === "text";
+          })
+          .text()
+          .trim()
+          .split(" ")[0];
+      }
     });
 
-    await browser.close();
+    const mrUrl = `https://fourhoi.com/${code}-uncensored-leak/preview.mp4`;
+    const isMr = await checkVideoExists(mrUrl);
 
-    res.json({
+    const data1 = {
       title,
       relDate,
       runtime,
+      isMr,
       // posterUrl,
-    });
+    };
+
+    // console.log("data1: ", data1);
+
+    res.json(data1);
   } catch (error) {
     console.error("Scraping error:", error);
     res.status(500).json({ error: "An error occurred while scraping" });
   }
 });
 
-module.exports = router;
+async function checkVideoExists(url) {
+  try {
+    const response = await axios.head(url);
+    if (response.status === 200) {
+      console.log("Video exists at the given URL.");
+      return true;
+    } else {
+      console.log("Video does not exist at the given URL.");
+      return false;
+    }
+  } catch (error) {
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      // that falls out of the range of 2xx
+      console.log("Video does not exist at the given URL.");
+      return false;
+    } else if (error.request) {
+      // The request was made but no response was received
+      console.log("No response received from the server.");
+      return false;
+    } else {
+      // Something happened in setting up the request that triggered an Error
+      console.log("Error:", error.message);
+      return false;
+    }
+  }
+}
+
+async function scrapeMovieData(code) {
+  const url = `https://www.javdatabase.com/movies/${code}/`;
+  const response = await axios.get(url);
+  const html = response.data;
+  const $ = cheerio.load(html);
+
+  // Extract title from h1 tag
+  let title = $("h1").first().text().trim();
+  title = title.slice(code.length + 3);
+
+  // Extract relDate and runtime
+  const pElements = $("p.mb-1");
+  let relDate = "";
+  let runtime = 0;
+
+  pElements.each((index, element) => {
+    const $element = $(element);
+    const spanText = $element.find("b").text().trim();
+
+    if (spanText === "Release Date:") {
+      relDate = $element
+        .contents()
+        .filter(function () {
+          return this.type === "text";
+        })
+        .text()
+        .trim();
+    } else if (spanText === "Runtime:") {
+      runtime = $element
+        .contents()
+        .filter(function () {
+          return this.type === "text";
+        })
+        .text()
+        .trim()
+        .slice(0, 3);
+      runtime = parseInt(runtime);
+    }
+  });
+
+  const mrUrl = `https://fourhoi.com/${code}-uncensored-leak/preview.mp4`;
+  const isMr = await checkVideoExists(mrUrl);
+
+  return { title, relDate, runtime, isMr };
+}
+
+// Keep the original route
+router.get("/scrape-jd", async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) {
+      return res.status(400).json({ error: "code is required" });
+    }
+    const data = await scrapeMovieData(code);
+    if (!data) console.error("No response from URL");
+    res.json(data);
+  } catch (error) {
+    console.error("Scraping error:", error);
+    res.status(500).json({ error: "An error occurred while scraping" });
+  }
+});
+
+router.get("/tags", async (req, res) => {
+  try {
+    let searchQuery;
+
+    if (req.query.q) {
+      const reqQuery = req.query.q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      searchQuery = new RegExp(`\\b${reqQuery}`, "i");
+    }
+
+    const tags = await Tags.find(searchQuery ? { name: searchQuery } : {});
+    res.json(tags);
+  } catch (err) {
+    console.error("fetching tags error:", err);
+    res
+      .status(500)
+      .json({ error: "An error occurred while fetching tags - ", err });
+  }
+});
+
+module.exports = { router, scrapeMovieData };

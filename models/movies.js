@@ -9,6 +9,7 @@ const moviesSchema = new mongoose.Schema({
   release: String,
   runtime: Number,
   tags: Array,
+  tag2: [{ type: mongoose.Schema.Types.ObjectId, ref: "Tag" }],
   opt: Array,
   series: { type: mongoose.Schema.Types.ObjectId, ref: "Serie" },
   overrides: {

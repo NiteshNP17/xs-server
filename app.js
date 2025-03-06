@@ -6,7 +6,7 @@ const app = express();
 
 const movieRoutes = require("./routes/movies");
 const actorRoutes = require("./routes/actors");
-const lookupRoutes = require("./routes/lookups");
+const { router: lookupRoutes } = require("./routes/lookups");
 const studioRoutes = require("./routes/studios");
 const seriesRoutes = require("./routes/series");
 const albumRoutes = require("./routes/albums");

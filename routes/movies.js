@@ -2,9 +2,12 @@
 const express = require("express");
 const router = express.Router();
 const Movies = require("../models/movies"); // Adjust the path as needed
+const Tags = require("../models/tags"); // Adjust the path as needed
 const Actors = require("../models/actors"); // Adjust the path as needed
 const Series = require("../models/series"); // Adjust the path as needed
 const Studios = require("../models/studios"); // Adjust the path as needed
+const { scrapeMovieData } = require("./lookups");
+const mongoose = require("mongoose");
 
 // Helper function to build the query and count filter based on the cast and maleCast queries
 const buildFilter = async (queries) => {
@@ -18,6 +21,17 @@ const buildFilter = async (queries) => {
       );
       const actorIds = actors.map((actor) => actor._id);
       filter.cast = { $in: actorIds };
+    }
+  }
+
+  if (queries.tag2Query) {
+    const tagNames = queries.tag2Query.split(",").map((name) => name.trim());
+
+    if (tagNames.length > 0) {
+      const tags = await Tags.find({ name: tagNames }).select("_id");
+      const tagsIds = tags.map((tag) => tag._id);
+
+      filter.tag2 = { $all: tagsIds };
     }
   }
 
@@ -90,7 +104,8 @@ router.get("/", async (req, res) => {
     castQuery: req.query.cast,
     maleCastQuery: req.query.mcast,
     seriesQuery: req.query.series,
-    tagsQuery: req.query.tags,
+    // tag1Query: req.query.tag1,
+    tag2Query: req.query.tags,
     studioQuery: req.query.studio,
     labelQuery: req.query.label,
   };
@@ -124,24 +139,6 @@ router.get("/", async (req, res) => {
             preserveNullAndEmptyArrays: true,
           },
         },
-        {
-          $project: {
-            code: 1,
-            title: 1,
-            "cast._id": 1,
-            "cast.name": 1,
-            "cast.dob": 1,
-            maleCast: 1,
-            release: 1,
-            runtime: 1,
-            tags: 1,
-            opt: 1,
-            "series._id": 1,
-            "series.slug": 1,
-            "series.name": 1,
-            overrides: 1,
-          },
-        },
       ]);
 
       res.json({
@@ -157,6 +154,7 @@ router.get("/", async (req, res) => {
         // .select("code title cast maleCast release opt overrides")
         .populate("cast", "name dob") // Populate the 'cast' field with 'name' and 'dob' from the Actor model
         .populate("series", "name slug thumbs") // Populate the 'cast' field with 'name' and 'dob' from the Actor model
+        .populate("tag2", "name") // Populate the 'cast' field with 'name' and 'dob' from the Actor model
         .sort(sortOption)
         .skip((page - 1) * limit)
         .limit(limit);
@@ -344,10 +342,9 @@ function bindMovieData(movie, data) {
   if (data.runtime) {
     movie.runtime = data.runtime;
   }
-  if (data.tags) {
-    movie.tags = data.tags.split(",").map((val) => val.trim().toLowerCase());
+  if (data.tag2) {
+    movie.tag2 = JSON.parse(data.tag2);
   }
-  movie.opt = data.opt.split(",").map((val) => val.trim().toLowerCase());
   if (data.series) {
     movie.series = data.series; // This will now be an ObjectId
   }
@@ -363,17 +360,227 @@ function bindMovieData(movie, data) {
 
 // Create a new movie
 router.post("/", async (req, res) => {
+  if (!req.body.code) {
+    return res.status(400).json({ message: "no code received!" });
+  }
+
   try {
+    // First check if a movie with the same code exists
+    const existingMovie = await Movies.findOne({
+      code: req.body.code?.toLowerCase(),
+    });
+
+    if (existingMovie) {
+      return res.status(409).json({
+        message: `Movie with code ${req.body.code} already exists`,
+      });
+    }
+
+    // If no existing movie found, proceed with creation
     const newMovie = new Movies();
     bindMovieData(newMovie, req.body);
 
     const savedMovie = await newMovie.save();
+
+    // Update numMovies for all actors in this movie's cast
+    if (savedMovie.cast && savedMovie.cast.length > 0) {
+      await Actors.updateMany(
+        { _id: { $in: savedMovie.cast } },
+        { $inc: { numMovies: 1 } }
+      );
+
+      // Individual updates for latestMovieDate
+      for (const actorId of savedMovie.cast) {
+        const actor = await Actors.findById(actorId);
+
+        // Compare and update latestMovieDate if needed
+        if (
+          !actor.latestMovieDate ||
+          savedMovie.release > actor.latestMovieDate
+        ) {
+          actor.latestMovieDate = savedMovie.release;
+          await actor.save();
+        }
+      }
+    }
 
     console.log("New movie saved: ", savedMovie);
     res.status(201).json(savedMovie);
   } catch (err) {
     console.error("Error creating movie: ", err);
     res.status(400).json({ message: err.message });
+  }
+});
+
+function formatCode(str) {
+  // Remove any leading/trailing whitespace
+  str = str.trim();
+
+  // Find the index of the last letter in the string
+  let lastLetterIndex = -1;
+  for (let i = str.length - 1; i >= 0; i--) {
+    if (isNaN(+str[i]) && str[i] !== " ") {
+      lastLetterIndex = i;
+      break;
+    }
+  }
+
+  // If no letter is found, return the original string
+  if (lastLetterIndex === -1) {
+    return str;
+  }
+
+  // Find the index of the first number after the last letter
+  let firstNumberIndex = -1;
+  for (let i = lastLetterIndex + 1; i < str.length; i++) {
+    if (!isNaN(+str[i])) {
+      firstNumberIndex = i;
+      break;
+    }
+  }
+
+  // If no number is found after the last letter, return the original string
+  if (firstNumberIndex === -1) {
+    return str;
+  }
+
+  // Check if a hyphen or space already exists between the last letter and the first number
+  // const hasHyphen = str[lastLetterIndex] === "-";
+  const hasHyphen = str.includes("-") || str.includes("_");
+
+  const hasSpace = str[lastLetterIndex + 1] === " ";
+
+  if (hasHyphen) return str;
+
+  // If a hyphen or space doesn't exist, insert a hyphen
+  if (!hasHyphen && !hasSpace) {
+    const modifiedStr = `${str.slice(0, lastLetterIndex + 1)}-${str.slice(
+      firstNumberIndex
+    )}`;
+    return modifiedStr;
+  }
+
+  // If a hyphen or space already exists, remove any spaces and return the string
+  const modifiedStr = `${str.slice(0, lastLetterIndex + 1)}-${str
+    .slice(firstNumberIndex)
+    .replace(/ /g, "")}`;
+  return modifiedStr;
+}
+
+// New route for batch processing
+router.post("/batch-create", async (req, res) => {
+  try {
+    const { cast, codes } = req.body;
+
+    if (!cast || !codes) {
+      return res.status(400).json({
+        error: "Both 'cast' and 'codes' are required",
+      });
+    }
+
+    const codeArray = codes.split(" ").map((code) => formatCode(code));
+    const results = {
+      success: [],
+      failures: [],
+    };
+
+    for (const code of codeArray) {
+      if (!code) {
+        return res.status(400).json({
+          error: "code not found",
+        });
+      }
+
+      try {
+        // Check for existing movie
+        const existingMovie = await Movies.findOne({
+          code: code.toLowerCase(),
+        });
+
+        if (existingMovie) {
+          results.failures.push({
+            code,
+            reason: "Movie already exists",
+          });
+          continue;
+        }
+
+        // Scrape data
+        const scrapedData = await scrapeMovieData(code);
+        const mrUrl = `https://fourhoi.com/${code}-uncensored-leak/preview.mp4`;
+
+        if (scrapedData.title) console.log(`movie data scraped for ${code}`);
+
+        const codeLabel = code.split("-")[0];
+        const scLabels = ["rebd", "oae", "fway"];
+        const vrLabels = ["sivr", "juvr", "ipvr", "mdvr", "dsvr"];
+        let tag2data;
+
+        if (scLabels.includes(codeLabel))
+          tag2data = JSON.stringify(["67c3f348b4e420283fdcf283"]);
+        if (vrLabels.includes(codeLabel))
+          tag2data = JSON.stringify(["67c3f423b4e420283fdcf28b"]);
+        if (scrapedData.isMr)
+          tag2data = JSON.stringify(["67c3f414b4e420283fdcf289"]);
+
+        // Create new movie object
+        const movieData = {
+          code,
+          cast,
+          title: scrapedData.title,
+          release: scrapedData.relDate,
+          runtime: scrapedData.runtime,
+          tag2: tag2data, // default empty array or whatever default you want
+          preview: scrapedData.isMr ? mrUrl : "", // default empty string or whatever default you want
+          cover: null, // default null or whatever default you want
+        };
+
+        const newMovie = new Movies();
+        bindMovieData(newMovie, movieData);
+
+        const savedMovie = await newMovie.save();
+        results.success.push({
+          code,
+          id: savedMovie._id,
+        });
+
+        // Update numMovies for all actors in this movie's cast
+        if (savedMovie.cast && savedMovie.cast.length > 0) {
+          await Actors.updateMany(
+            { _id: { $in: savedMovie.cast } },
+            { $inc: { numMovies: 1 } }
+          );
+
+          // Individual updates for latestMovieDate
+          const actor = await Actors.findById(savedMovie.cast[0]);
+
+          // Compare and update latestMovieDate if needed
+          if (
+            !actor.latestMovieDate ||
+            savedMovie.release > actor.latestMovieDate
+          ) {
+            actor.latestMovieDate = savedMovie.release;
+            await actor.save();
+          }
+        }
+      } catch (error) {
+        results.failures.push({
+          code,
+          reason: error.message,
+        });
+      }
+    }
+
+    res.json({
+      message: `Processed ${codeArray.length} movies`,
+      results,
+    });
+  } catch (err) {
+    console.error("Batch processing error:", err);
+    res.status(500).json({
+      message: "An error occurred during batch processing",
+      error: err.message,
+    });
   }
 });
 
@@ -406,13 +613,54 @@ router.put("/:code", getMovie, async (req, res) => {
   }
 });
 
-// Delete a movie by code
+// Modify delete route to potentially update latestMovieDate
 router.delete("/:code", async (req, res) => {
   try {
-    const deletedMovie = await Movies.deleteOne({ code: req.params.code });
-    if (deletedMovie.deletedCount === 0) {
+    // First, find the movie to get its cast before deleting
+    const movieToDelete = await Movies.findOne({ code: req.params.code });
+
+    if (!movieToDelete) {
       return res.status(404).json({ message: "Cannot find movie" });
     }
+
+    // Delete the movie
+    const deletedMovie = await Movies.deleteOne({ code: req.params.code });
+
+    // If movie was successfully deleted and had a cast
+    if (
+      deletedMovie.deletedCount > 0 &&
+      movieToDelete.cast &&
+      movieToDelete.cast.length > 0
+    ) {
+      // Decrement numMovies for actors in this movie's cast
+      await Actors.updateMany(
+        { _id: { $in: movieToDelete.cast } },
+        { $inc: { numMovies: -1 } }
+      );
+
+      // Potentially update latestMovieDate for affected actors
+      for (const actorId of movieToDelete.cast) {
+        const actor = await Actors.findById(actorId);
+
+        // If the deleted movie was the latest, find the next latest movie
+        if (actor.latestMovieDate === movieToDelete.release) {
+          const nextLatestMovie = await Movies.findOne(
+            {
+              cast: actorId,
+              release: { $ne: movieToDelete.release },
+            },
+            { release: 1 }
+          ).sort({ release: -1 });
+
+          // Update or clear latestMovieDate
+          actor.latestMovieDate = nextLatestMovie
+            ? nextLatestMovie.release
+            : null;
+          await actor.save();
+        }
+      }
+    }
+
     res.json({ message: "Movie deleted" });
   } catch (err) {
     console.error(err);

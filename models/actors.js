@@ -10,6 +10,11 @@ const actorsSchema = new mongoose.Schema(
       type: String,
       index: true, // For date of birth sorting
     },
+    cup: {
+      type: String,
+      index: true, // For date of birth sorting
+      length: 1,
+    },
     sizes: {
       bust: {
         type: Number,
@@ -32,6 +37,12 @@ const actorsSchema = new mongoose.Schema(
       index: true, // For height sorting
     },
     img500: String,
+    latestMovieDate: String,
+    numMovies: {
+      type: Number,
+      default: 0,
+      min: 0, // Ensure numMovies is never negative
+    }, // Add this field
   },
   {
     // Add compound indexes for more complex sorting scenarios
@@ -39,6 +50,7 @@ const actorsSchema = new mongoose.Schema(
       { name: 1 }, // Ascending name sort
       { height: -1 }, // Descending height sort
       { dob: 1 }, // Ascending date of birth
+      { cup: -1 }, // Ascending date of birth
       // If you often sort by movie count or years active, you might want to add placeholders for those
       { numMovies: -1 },
       { yearsActive: 1 },
