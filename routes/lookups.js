@@ -204,7 +204,12 @@ const { chromium } = require("playwright");
 async function scrapeMovieData2(code) {
   const browser = await chromium.launch({
     headless: true,
-    args: ["--disable-dev-shm-usage", "--single-process"], // Reduces memory usage
+    args: [
+      "--disable-dev-shm-usage",
+      "--single-process",
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+    ], // Reduces memory usage
   });
   const page = await browser.newPage();
 
