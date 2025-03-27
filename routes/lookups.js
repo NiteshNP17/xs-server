@@ -202,7 +202,10 @@ async function checkVideoExists(url) {
 const { chromium } = require("playwright");
 
 async function scrapeMovieData2(code) {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--disable-dev-shm-usage", "--single-process"], // Reduces memory usage
+  });
   const page = await browser.newPage();
 
   try {
