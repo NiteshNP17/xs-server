@@ -203,7 +203,7 @@ const { chromium } = require("playwright-core");
 
 async function scrapeMovieData2(code) {
   const browser = await chromium.launch({
-    channel: "chrome", // Tries system Chrome first
+    // channel: "chrome", // Tries system Chrome first
     headless: true,
     args: ["--no-sandbox"],
   });
