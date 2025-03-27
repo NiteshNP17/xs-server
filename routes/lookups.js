@@ -199,17 +199,13 @@ async function checkVideoExists(url) {
   }
 }
 
-const { chromium } = require("playwright");
+const { chromium } = require("playwright-core");
 
 async function scrapeMovieData2(code) {
   const browser = await chromium.launch({
+    channel: "chrome", // Tries system Chrome first
     headless: true,
-    args: [
-      "--disable-dev-shm-usage",
-      "--single-process",
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-    ], // Reduces memory usage
+    args: ["--no-sandbox"],
   });
   const page = await browser.newPage();
 
