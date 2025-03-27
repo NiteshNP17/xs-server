@@ -166,7 +166,7 @@ router.get("/scrape-jt", async (req, res) => {
 
     res.json(data1);
   } catch (error) {
-    console.error("Scraping error:", error);
+    console.error("Scraping error: ", error.message);
     res.status(500).json({ error: "An error occurred while scraping" });
   }
 });
@@ -196,6 +196,59 @@ async function checkVideoExists(url) {
       console.log("Error:", error.message);
       return false;
     }
+  }
+}
+
+const { chromium } = require("playwright");
+
+async function scrapeMovieData2(code) {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+
+  try {
+    // Navigate to the movie page
+    const url = `https://www.javdatabase.com/movies/${code}/`;
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+
+    // Extract title from h1 tag
+    let title = await page.$eval("h1", (el) => el.textContent.trim());
+    title = title.slice(code.length + 3);
+
+    // Extract relDate and runtime
+    let relDate = "";
+    let runtime = 0;
+
+    const pElements = await page.$$("p.mb-1");
+    for (const p of pElements) {
+      const spanText = await p.$eval("b", (el) => el.textContent.trim());
+
+      if (spanText === "Release Date:") {
+        relDate = await p.evaluate((el) => {
+          return Array.from(el.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent.trim())
+            .join(" ")
+            .trim();
+        });
+      } else if (spanText === "Runtime:") {
+        const runtimeText = await p.evaluate((el) => {
+          return Array.from(el.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent.trim())
+            .join(" ")
+            .trim();
+        });
+        runtime = parseInt(runtimeText.slice(0, 3));
+      }
+    }
+
+    // Check for video
+    const mrUrl = `https://fourhoi.com/${code}-uncensored-leak/preview.mp4`;
+    const isMr = await checkVideoExists(mrUrl);
+
+    return { title, relDate, runtime, isMr };
+  } finally {
+    await browser.close();
   }
 }
 
@@ -252,11 +305,11 @@ router.get("/scrape-jd", async (req, res) => {
     if (!code) {
       return res.status(400).json({ error: "code is required" });
     }
-    const data = await scrapeMovieData(code);
+    const data = await scrapeMovieData2(code);
     if (!data) console.error("No response from URL");
     res.json(data);
   } catch (error) {
-    console.error("Scraping error:", error);
+    console.error("Scraping error: ", error.message);
     res.status(500).json({ error: "An error occurred while scraping" });
   }
 });
@@ -277,6 +330,75 @@ router.get("/tags", async (req, res) => {
     res
       .status(500)
       .json({ error: "An error occurred while fetching tags - ", err });
+  }
+});
+
+router.get("/scrape-actor-data", async (req, res) => {
+  try {
+    const { actor } = req.query;
+    const url = `https://www.javdatabase.com/idols/${actor}/`;
+    const response = await axios.get(url);
+    const html = response.data;
+    const $ = cheerio.load(html);
+
+    // Initialize an object to store the actor data
+    const actorData = {
+      dob: null,
+      sizes: null,
+      height: null,
+      cup: null,
+    };
+
+    // Find the div with class "col-12"
+    const dataDiv = $("div.col-12");
+
+    // Extract DOB - It's in an <a> tag after a <b> tag with text "DOB:"
+    dataDiv.each(function () {
+      const divText = $(this).text();
+
+      // Check if this div contains DOB information
+      if (divText.includes("DOB:")) {
+        // Find the <b> tag with "DOB:" text and get the next <a> tag
+        const dobElement = $(this).find('b:contains("DOB:")').next("a");
+        if (dobElement.length) {
+          actorData.dob = dobElement.text().trim();
+        }
+
+        if (divText.includes("Cup:")) {
+          const cupEl = $(this).find('b:contains("Cup:")').next("a");
+          if (cupEl.length) actorData.cup = cupEl.text().trim();
+        }
+
+        if (divText.includes("Height:")) {
+          const heightEl = $(this).find('b:contains("Height:")').next("a");
+          if (heightEl.length)
+            actorData.height = parseInt(heightEl.text().trim().slice(0, 3));
+        }
+
+        // Find the <b> tag with "Height:" text and get the text after it
+        const sizeElement = $(this).find('b:contains("Measurements:")');
+        if (sizeElement.length) {
+          // Extract the text after the height label, removing quotes
+          const sizeText = sizeElement[0].nextSibling.nodeValue;
+          if (sizeText) {
+            actorData.sizes = sizeText.trim().slice(-0, -4);
+          }
+        }
+      }
+    });
+
+    // Return the scraped data as JSON
+    return res.status(200).json({
+      success: true,
+      data: actorData,
+    });
+  } catch (err) {
+    console.error("Error scraping actor data: ", err.message);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to scrape actor data",
+      message: err.message,
+    });
   }
 });
 

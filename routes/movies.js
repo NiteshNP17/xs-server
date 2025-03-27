@@ -413,6 +413,7 @@ router.post("/", async (req, res) => {
 });
 
 function formatCode(str) {
+  if (!str) return;
   // Remove any leading/trailing whitespace
   str = str.trim();
 
@@ -478,19 +479,16 @@ router.post("/batch-create", async (req, res) => {
       });
     }
 
-    const codeArray = codes.split(" ").map((code) => formatCode(code));
+    const codeArray = codes
+      .split(" ")
+      .filter((str) => str)
+      .map((code) => formatCode(code));
     const results = {
       success: [],
       failures: [],
     };
 
     for (const code of codeArray) {
-      if (!code) {
-        return res.status(400).json({
-          error: "code not found",
-        });
-      }
-
       try {
         // Check for existing movie
         const existingMovie = await Movies.findOne({

@@ -11,8 +11,11 @@ router.get("/", async (req, res) => {
   const isRandom = req.query.random !== undefined;
   const reqSort = req.query.sort || "name";
   const sortDirection = req.query.dir === "desc" ? -1 : 1;
-  const sortOption = { [reqSort]: sortDirection };
+  let sortOption = { [reqSort]: sortDirection };
   let searchQuery;
+
+  if (reqSort === "cup")
+    sortOption = { [reqSort]: sortDirection, "sizes.bust": sortDirection };
 
   if (req.query.q) {
     const reqQuery = req.query.q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -23,9 +26,9 @@ router.get("/", async (req, res) => {
     // Base match condition
     const filterCondition = isList
       ? { name: searchQuery }
-      : !isRandom
-      ? { img500: { $ne: null } }
-      : {};
+      : // : !isRandom
+        // ? { img500: { $ne: null } }
+        {};
 
     const pipeline = [{ $match: filterCondition }];
 
