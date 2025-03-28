@@ -207,7 +207,35 @@ async function scrapeMovieData2(code) {
     headless: true,
     args: ["--no-sandbox"],
   });
-  const page = await browser.newPage();
+
+  const context = await browser.newContext({
+    // Spoof a realistic user agent
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    extraHTTPHeaders: {
+      // Add typical headers to make the request look more like a real browser
+      "Accept-Language": "en-US,en;q=0.9",
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-User": "?1",
+      "Sec-Fetch-Dest": "document",
+    },
+  });
+
+  const page = await context.newPage();
+
+  // Check if verification page is present
+  const isVerificationPage = await page.evaluate(() => {
+    return document.title === "Just a moment...";
+  });
+
+  if (isVerificationPage) {
+    console.error("Verification page detected. Unable to bypass.");
+    await browser.close();
+    throw new Error("Human verification page encountered");
+  }
 
   try {
     // Navigate to the movie page
@@ -215,8 +243,8 @@ async function scrapeMovieData2(code) {
     await page.goto(url, { waitUntil: "domcontentloaded" });
 
     // Log the entire DOM content
-    const pageContent = await page.content();
-    console.log(pageContent);
+    // const pageContent = await page.content();
+    // console.log(pageContent);
 
     // Extract title from h1 tag
     let title = await page.$eval("h1", (el) => el.textContent.trim());
