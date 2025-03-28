@@ -214,6 +214,10 @@ async function scrapeMovieData2(code) {
     const url = `https://www.javdatabase.com/movies/${code}/`;
     await page.goto(url, { waitUntil: "domcontentloaded" });
 
+    // Log the entire DOM content
+    const pageContent = await page.content();
+    console.log(pageContent);
+
     // Extract title from h1 tag
     let title = await page.$eval("h1", (el) => el.textContent.trim());
     title = title.slice(code.length + 3);
