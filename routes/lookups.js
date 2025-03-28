@@ -231,20 +231,9 @@ async function scrapeMovieData2(code) {
     const url = `https://www.javdatabase.com/movies/${code}/`;
     await page.goto(url, { waitUntil: "domcontentloaded" });
 
-    // Check if verification page is present
-    const isVerificationPage = await page.evaluate(() => {
-      return document.title === "Just a moment...";
-    });
-
-    if (isVerificationPage) {
-      console.error("Verification page detected. Unable to bypass.");
-      await browser.close();
-      throw new Error("Human verification page encountered");
-    }
-
     // Log the entire DOM content
-    // const pageContent = await page.content();
-    // console.log(pageContent);
+    const pageContent = await page.content();
+    console.log(pageContent);
 
     // Extract title from h1 tag
     let title = await page.$eval("h1", (el) => el.textContent.trim());
