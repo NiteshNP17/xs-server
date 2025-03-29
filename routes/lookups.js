@@ -205,7 +205,13 @@ async function scrapeMovieData2(code) {
   const browser = await chromium.launch({
     // channel: "chrome", // Tries system Chrome first
     headless: true,
-    args: ["--no-sandbox"],
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+    ],
+    slowMo: 50,
   });
 
   const context = await browser.newContext({
@@ -229,15 +235,30 @@ async function scrapeMovieData2(code) {
   try {
     // Navigate to the movie page
     const url = `https://www.javdatabase.com/movies/${code}/`;
-    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.goto(url, {
+      waitUntil: "networkidle", // Wait until network is quiet
+      timeout: 60000, // Allow 60 seconds for loading
+    });
 
     // Log the entire DOM content
     // const pageContent = await page.content();
     // console.log(pageContent);
 
+    // Add explicit waits before selecting elements
+    await page.waitForSelector("h1", { timeout: 30000 });
+
+    await page.screenshot({ path: "/tmp/debug-screenshot.png" });
+    console.log("Screenshot saved for debugging");
+
     // Extract title from h1 tag
-    let title = await page.$eval("h1", (el) => el.textContent.trim());
-    title = title.slice(code.length + 3);
+    let title = "";
+    try {
+      await page.waitForSelector("h1", { state: "attached" });
+      title = await page.$eval("h1", (el) => el.textContent.trim());
+      title = title.slice(code.length + 3);
+    } catch (err) {
+      console.log("Failed to get title:", err.message);
+    }
 
     // Extract relDate and runtime
     let relDate = "";
