@@ -245,10 +245,10 @@ async function scrapeMovieData2(code) {
     // console.log(pageContent);
 
     // Add explicit waits before selecting elements
-    await page.waitForSelector("h1", { timeout: 30000 });
+    // await page.waitForSelector("h1", { timeout: 30000 });
 
-    await page.screenshot({ path: "/tmp/debug-screenshot.png" });
-    console.log("Screenshot saved for debugging");
+    const pageTitle = await page.title();
+    console.log("Page loaded with title:", pageTitle);
 
     // Extract title from h1 tag
     let title = "";
