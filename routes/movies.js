@@ -7,7 +7,6 @@ const Actors = require("../models/actors"); // Adjust the path as needed
 const Series = require("../models/series"); // Adjust the path as needed
 const Studios = require("../models/studios"); // Adjust the path as needed
 const { scrapeMovieData } = require("./lookups");
-const mongoose = require("mongoose");
 
 // Helper function to build the query and count filter based on the cast and maleCast queries
 const buildFilter = async (queries) => {
@@ -20,7 +19,8 @@ const buildFilter = async (queries) => {
         "_id"
       );
       const actorIds = actors.map((actor) => actor._id);
-      filter.cast = { $in: actorIds };
+      filter.cast = { $all: actorIds };
+      // filter.cast = { $in: actorIds };
     }
   }
 
@@ -207,6 +207,49 @@ router.get("/", async (req, res) => {
   }
 });
 
+router.get("/filter", async (req, res) => {
+  const query = req.query.q;
+  const queryCode = formatCode(req.query.q);
+
+  try {
+    const codes = await Movies.find({
+      code: { $regex: queryCode, $options: "i" },
+    })
+      .select("code")
+      .sort({ code: -1 })
+      .limit(3);
+
+    const codeOptions = codes.map((movie) => ({
+      id: movie.code,
+      type: "code",
+    }));
+
+    const actors = await Actors.find({ name: { $regex: query, $options: "i" } })
+      .select("name")
+      .sort({ numMovies: -1 })
+      .limit(3);
+
+    const castOptions = actors.map((actor) => ({
+      id: actor.name,
+      type: "cast",
+    }));
+
+    const tags = await Tags.find({ name: { $regex: query, $options: "i" } })
+      .select("name")
+      .sort({ _id: 1 })
+      .limit(5);
+
+    const tagOptions = tags.map((tag) => ({
+      id: tag.name,
+      type: "tag",
+    }));
+
+    res.json([...castOptions, ...tagOptions, ...codeOptions]);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // Search route
 router.get("/search", async (req, res) => {
   const query = req.query.q;
@@ -305,7 +348,8 @@ async function getMovie(req, res, next) {
   try {
     const movie = await Movies.findOne({ code: req.params.code })
       .populate("series", "name slug")
-      .populate("cast", "name slug dob");
+      .populate("cast", "name slug dob")
+      .populate("tag2", "name");
 
     if (!movie) {
       return res.status(404).json({ message: "Cannot find movie" });
@@ -358,6 +402,15 @@ function bindMovieData(movie, data) {
   movie.overrides.preview = data.preview.trim();
 }
 
+function calculateAge(dobDate, referenceDate) {
+  const diffInMilliseconds = referenceDate.getTime() - dobDate.getTime();
+  const ageInYears = Math.floor(
+    diffInMilliseconds / (1000 * 60 * 60 * 24 * 365.25)
+  );
+
+  return parseInt(ageInYears);
+}
+
 // Create a new movie
 router.post("/", async (req, res) => {
   if (!req.body.code) {
@@ -399,6 +452,11 @@ router.post("/", async (req, res) => {
           savedMovie.release > actor.latestMovieDate
         ) {
           actor.latestMovieDate = savedMovie.release;
+          if (actor.dob)
+            actor.ageAtLatestRel = calculateAge(
+              new Date(actor.dob),
+              new Date(savedMovie.release)
+            );
           await actor.save();
         }
       }
@@ -486,6 +544,7 @@ router.post("/batch-create", async (req, res) => {
     const results = {
       success: [],
       failures: [],
+      exists: [],
     };
 
     for (const code of codeArray) {
@@ -496,10 +555,7 @@ router.post("/batch-create", async (req, res) => {
         });
 
         if (existingMovie) {
-          results.failures.push({
-            code,
-            reason: "Movie already exists",
-          });
+          results.exists.push(code);
           continue;
         }
 
@@ -507,19 +563,25 @@ router.post("/batch-create", async (req, res) => {
         const scrapedData = await scrapeMovieData(code);
         const mrUrl = `https://fourhoi.com/${code}-uncensored-leak/preview.mp4`;
 
-        if (scrapedData.title) console.log(`movie data scraped for ${code}`);
-
         const codeLabel = code.split("-")[0];
         const scLabels = ["rebd", "oae", "fway"];
-        const vrLabels = ["sivr", "juvr", "ipvr", "mdvr", "dsvr"];
-        let tag2data;
+        const vrLabels = ["vrkm", "urvrsp"];
+        let tag2data = [];
 
         if (scLabels.includes(codeLabel))
-          tag2data = JSON.stringify(["67c3f348b4e420283fdcf283"]);
-        if (vrLabels.includes(codeLabel))
-          tag2data = JSON.stringify(["67c3f423b4e420283fdcf28b"]);
-        if (scrapedData.isMr)
-          tag2data = JSON.stringify(["67c3f414b4e420283fdcf289"]);
+          tag2data.push(["67c3f348b4e420283fdcf283"]);
+        if (vrLabels.includes(codeLabel) || codeLabel.endsWith("vr"))
+          tag2data.push(["67c3f423b4e420283fdcf28b"]);
+        if (scrapedData.tags.includes("mr"))
+          tag2data.push(["67c3f414b4e420283fdcf289"]);
+        if (scrapedData.tags.includes("en"))
+          tag2data.push(["67c3f435b4e420283fdcf28c"]);
+        if (scrapedData.tags.includes("ass"))
+          tag2data.push(["67c3f2e2b4e420283fdcf27e"]);
+        if (scrapedData.tags.includes("pov"))
+          tag2data.push(["67c3f30ab4e420283fdcf27f"]);
+
+        tag2data = JSON.stringify(tag2data);
 
         // Create new movie object
         const movieData = {
@@ -529,7 +591,7 @@ router.post("/batch-create", async (req, res) => {
           release: scrapedData.relDate,
           runtime: scrapedData.runtime,
           tag2: tag2data, // default empty array or whatever default you want
-          preview: scrapedData.isMr ? mrUrl : "", // default empty string or whatever default you want
+          preview: scrapedData.tags.includes("mr") ? mrUrl : "", // default empty string or whatever default you want
           cover: null, // default null or whatever default you want
         };
 
@@ -537,10 +599,7 @@ router.post("/batch-create", async (req, res) => {
         bindMovieData(newMovie, movieData);
 
         const savedMovie = await newMovie.save();
-        results.success.push({
-          code,
-          id: savedMovie._id,
-        });
+        results.success.push(code);
 
         // Update numMovies for all actors in this movie's cast
         if (savedMovie.cast && savedMovie.cast.length > 0) {
@@ -569,6 +628,8 @@ router.post("/batch-create", async (req, res) => {
       }
     }
 
+    console.log(results);
+
     res.json({
       message: `Processed ${codeArray.length} movies`,
       results,
@@ -584,10 +645,68 @@ router.post("/batch-create", async (req, res) => {
 
 // Update a movie by code
 router.put("/:code", getMovie, async (req, res) => {
-  bindMovieData(res.movie, req.body);
-
   try {
+    // Store the original cast before updating
+    const originalCast = [...res.movie.cast].map((actor) =>
+      actor._id.toString()
+    );
+
+    // Update movie data
+    bindMovieData(res.movie, req.body);
+
+    // Get the new cast IDs as strings for comparison
+    const newCast = res.movie.cast.map((id) => id.toString());
+
+    // Find actors that were added (in newCast but not in originalCast)
+    const addedActors = newCast.filter(
+      (actorId) => !originalCast.includes(actorId)
+    );
+
+    // Find actors that were removed (in originalCast but not in newCast)
+    const removedActors = originalCast.filter(
+      (actorId) => !newCast.includes(actorId)
+    );
+
+    // Save the updated movie
     const updatedMovie = await res.movie.save();
+
+    // Increment numMovies for newly added actors
+    if (addedActors.length > 0) {
+      await Actors.updateMany(
+        { _id: { $in: addedActors } },
+        { $inc: { numMovies: 1 } }
+      );
+
+      // Update latestMovieDate for newly added actors if needed
+      for (const actorId of addedActors) {
+        const actor = await Actors.findById(actorId);
+
+        // Compare and update latestMovieDate if needed
+        if (
+          !actor.latestMovieDate ||
+          updatedMovie.release > actor.latestMovieDate
+        ) {
+          actor.latestMovieDate = updatedMovie.release;
+          if (actor.dob)
+            actor.ageAtLatestRel = calculateAge(
+              new Date(actor.dob),
+              new Date(updatedMovie.release)
+            );
+          await actor.save();
+        }
+      }
+    }
+
+    // Decrement numMovies for removed actors
+    if (removedActors.length > 0) {
+      await Actors.updateMany(
+        { _id: { $in: removedActors } },
+        { $inc: { numMovies: -1 } }
+      );
+
+      // Note: We don't update latestMovieDate here as it would require
+      // finding the new latest movie for each actor, which is more complex
+    }
 
     // Repopulate the cast after saving
     await updatedMovie.populate("cast", "name slug dob");
@@ -607,6 +726,7 @@ router.put("/:code", getMovie, async (req, res) => {
 
     res.json(movieResponse);
   } catch (err) {
+    console.error("Error updating movie: ", err);
     res.status(400).json({ message: err.message });
   }
 });

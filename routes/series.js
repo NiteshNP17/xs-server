@@ -6,7 +6,9 @@ const Movies = require("../models/movies"); // Adjust the path as needed
 
 router.get("/", async (req, res) => {
   try {
+    let filterCondition = req.query.studio ? { studio: req.query.studio } : {};
     let aggregationPipeline = [
+      { $match: filterCondition },
       {
         $lookup: {
           from: "movies",
@@ -40,7 +42,7 @@ router.get("/", async (req, res) => {
       const limit = 12;
       const skip = (page - 1) * limit;
 
-      const totalSeries = await Series.countDocuments();
+      const totalSeries = await Series.countDocuments(filterCondition);
       const totalPages = Math.ceil(totalSeries / limit);
 
       aggregationPipeline.push({ $skip: skip }, { $limit: limit });

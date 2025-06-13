@@ -14,8 +14,13 @@ router.get("/", async (req, res) => {
   let sortOption = { [reqSort]: sortDirection };
   let searchQuery;
 
-  if (reqSort === "cup")
+  if (reqSort === "cup") {
     sortOption = { [reqSort]: sortDirection, "sizes.bust": sortDirection };
+  } else if (reqSort === "ageAtLatestRel") {
+    sortOption = { [reqSort]: sortDirection, dob: -sortDirection };
+  } else if (reqSort === "order") {
+    sortOption = { [reqSort]: sortDirection, numMovies: 1, name: 1 };
+  }
 
   if (req.query.q) {
     const reqQuery = req.query.q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -52,7 +57,7 @@ router.get("/", async (req, res) => {
       );
     } else {
       const page = parseInt(req.query.page) || 1;
-      const limit = 24;
+      const limit = 30;
       const totalActors = await Actors.countDocuments(filterCondition);
 
       pipeline.push({ $skip: (page - 1) * limit }, { $limit: limit });
@@ -69,6 +74,56 @@ router.get("/", async (req, res) => {
     const actors = await Actors.aggregate(pipeline);
     res.json({ actors });
   } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Update actor order
+router.patch("/order/:id", async (req, res) => {
+  try {
+    const { newOrder, prevOrder, nextOrder } = req.body;
+
+    let orderValue;
+
+    // If explicit newOrder provided, use it
+    if (newOrder !== undefined) {
+      orderValue = newOrder;
+    }
+    // If positioning between two items, calculate the midpoint
+    else if (prevOrder !== undefined && nextOrder !== undefined) {
+      orderValue = prevOrder + (nextOrder - prevOrder) / 2;
+    }
+    // If only prevOrder, position after it
+    else if (prevOrder !== undefined) {
+      orderValue = prevOrder + 1;
+    }
+    // If only nextOrder, position before it
+    else if (nextOrder !== undefined) {
+      orderValue = nextOrder - 1;
+    }
+    // Default to a high value if none provided
+    else {
+      orderValue = 9999999;
+    }
+
+    // Validate the order is a number
+    if (typeof orderValue !== "number") {
+      return res.status(400).json({ message: "Order must be a number" });
+    }
+
+    const actor = await Actors.findByIdAndUpdate(
+      req.params.id,
+      { order: orderValue },
+      { new: true }
+    );
+
+    if (!actor) {
+      return res.status(404).json({ message: "Actor not found" });
+    }
+
+    res.json(actor);
+  } catch (err) {
+    console.error("Error updating actor order:", err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -210,18 +265,34 @@ async function getActor(req, res, next) {
   next();
 }
 
+function calculateAge(dobDate, referenceDate) {
+  const diffInMilliseconds = referenceDate.getTime() - dobDate.getTime();
+  const ageInYears = Math.floor(
+    diffInMilliseconds / (1000 * 60 * 60 * 24 * 365.25)
+  );
+
+  return parseInt(ageInYears);
+}
+
 // Helper function for data binding
 function bindActorData(actor, data) {
   if (data.name) actor.name = data.name.trim().toLowerCase();
+  if (data.jpName) actor.jpName = data.jpName.trim().toLowerCase();
   if (data.cup) actor.cup = data.cup.trim().toLowerCase();
   if (data.dob) {
     const dobDate = new Date(data.dob.trim());
     // Set the time to 12:00:00.000 to prevent any potential time zone issues
     dobDate.setHours(12, 0, 0, 0);
     actor.dob = dobDate.toISOString().split("T")[0]; // YYYY-MM-DD
+    if (actor.latestMovieDate && !actor.ageAtLatestRel)
+      actor.ageAtLatestRel = calculateAge(
+        new Date(actor.dob),
+        new Date(actor.latestMovieDate)
+      );
   }
   if (data.height) actor.height = data.height;
   if (data.img500) actor.img500 = data.img500.trim();
+  if (data.rebdSrc) actor.rebdSrc = data.rebdSrc.trim().toLowerCase();
   if (data.sizes) {
     let sizeSplit = data.sizes.trim().split("-");
     actor.sizes = {

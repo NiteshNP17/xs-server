@@ -5,7 +5,7 @@ const studiosSchema = new mongoose.Schema({
   slug: String,
   name: String,
   labels: Array,
-  rank: Number,
+  // rank: Number,
   logo: String,
   web: String,
 });

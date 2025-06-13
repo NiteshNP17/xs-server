@@ -1,15 +1,19 @@
 //models/labels.js
 const mongoose = require("mongoose");
-const labelsSchema = new mongoose.Schema({
-  label: String,
-  maxNum: Number,
-  prefix: String,
-  imgPre: String,
-  name: String,
-  is3digits: Boolean,
-  isHq: Boolean,
-  isDmb: Boolean,
-  isVr: Boolean,
-});
+const labelsSchema = new mongoose.Schema(
+  {
+    label: String,
+    maxNum: Number,
+    prefix: String,
+    imgPre: String,
+    name: String,
+    is3digits: Boolean,
+    isHq: Boolean,
+    isDmb: Boolean,
+    isVr: Boolean,
+    studio: { type: mongoose.Schema.Types.ObjectId, ref: "Studio" },
+  },
+  { indexes: [{ label: 1 }] }
+);
 
 module.exports = mongoose.model("Label", labelsSchema);

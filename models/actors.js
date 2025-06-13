@@ -6,6 +6,10 @@ const actorsSchema = new mongoose.Schema(
       type: String,
       index: true, // For name sorting
     },
+    jpName: {
+      type: String,
+      index: false, // For name sorting
+    },
     dob: {
       type: String,
       index: true, // For date of birth sorting
@@ -37,12 +41,21 @@ const actorsSchema = new mongoose.Schema(
       index: true, // For height sorting
     },
     img500: String,
+    rebdSrc: String,
     latestMovieDate: String,
     numMovies: {
       type: Number,
       default: 0,
       min: 0, // Ensure numMovies is never negative
     }, // Add this field
+    ageAtLatestRel: {
+      type: Number,
+      default: null,
+    },
+    order: {
+      type: Number,
+      default: 99999.0,
+    },
   },
   {
     // Add compound indexes for more complex sorting scenarios
@@ -54,6 +67,8 @@ const actorsSchema = new mongoose.Schema(
       // If you often sort by movie count or years active, you might want to add placeholders for those
       { numMovies: -1 },
       { yearsActive: 1 },
+      { ageAtLatestRel: 1 }, // Add index for the new field
+      { order: 1 }, // Add index for the new field
     ],
   }
 );

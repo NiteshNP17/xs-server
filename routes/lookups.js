@@ -5,6 +5,7 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const Labels = require("../models/labels");
 const Tags = require("../models/tags"); // Adjust the path as needed
+const Movies = require("../models/movies"); // Adjust the path as needed
 
 function convertToMinutes(timeString) {
   const [hours, minutes, seconds] = timeString.split(":").map(Number);
@@ -175,10 +176,10 @@ async function checkVideoExists(url) {
   try {
     const response = await axios.head(url);
     if (response.status === 200) {
-      console.log("Video exists at the given URL.");
+      // console.log("Video exists at the given URL.");
       return true;
     } else {
-      console.log("Video does not exist at the given URL.");
+      // console.log("Video does not exist at the given URL.");
       return false;
     }
   } catch (error) {
@@ -338,11 +339,169 @@ async function scrapeMovieData(code) {
     }
   });
 
+  let tags = [];
+
+  // Check if a specific tag link with text "ABC" exists
+  const isPov =
+    $('a[rel="tag"]').filter(function () {
+      return $(this).text() === "POV";
+    }).length > 0;
+
+  const isAsL =
+    $('a[rel="tag"]').filter(function () {
+      return $(this).text() === "Ass Lover";
+    }).length > 0;
+
+  if (isPov) tags.push("pov");
+  if (isAsL) tags.push("ass");
+
   const mrUrl = `https://fourhoi.com/${code}-uncensored-leak/preview.mp4`;
   const isMr = await checkVideoExists(mrUrl);
+  const isEn = await checkVideoExists(
+    `https://fourhoi.com/${code}-english-subtitle/preview.mp4`
+  );
+  if (isMr) tags.push("mr");
+  if (isEn) tags.push("en");
 
-  return { title, relDate, runtime, isMr };
+  return { title, relDate, runtime, tags };
 }
+
+router.get("/scrape-actor-page", async (req, res) => {
+  try {
+    const { actor, startPage, endPage } = req.query;
+
+    // Input validation
+    if (!actor) {
+      return res.status(400).json({ error: "Actor name is required" });
+    }
+
+    // Parse and validate page range
+    const start = parseInt(startPage || "1", 10);
+    const end = parseInt(endPage || "1", 10);
+
+    // Safety checks for page range
+    if (start < 1) {
+      return res.status(400).json({ error: "Start page must be at least 1" });
+    }
+    if (end - start >= 10) {
+      return res
+        .status(400)
+        .json({ error: "Maximum 10 pages can be scraped in a single request" });
+    }
+    if (start > end) {
+      return res
+        .status(400)
+        .json({ error: "Start page must be less than or equal to end page" });
+    }
+
+    const baseUrl = `https://www.javdatabase.com/idols/${actor}/`;
+
+    // Fetch unique labels using aggregation
+    const uniqueLabels = await Labels.aggregate([
+      { $group: { _id: "$label" } },
+      { $project: { label: "$_id", _id: 0 } },
+    ]);
+
+    // Convert to Set for efficient lookup
+    const allowedLabels = new Set(
+      uniqueLabels.map((l) => l.label.toLowerCase())
+    );
+
+    // Create a rate limit to prevent overwhelming the server
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // Iterate through pages with sequential processing
+    const allResults = [];
+    const labelsIgnored = [];
+
+    for (let page = start; page <= end; page++) {
+      try {
+        // Construct URL with pagination
+        const url = `${baseUrl}?ipage=${page}`;
+
+        // Add small delay between requests
+        await delay(500); // 500ms between requests
+
+        console.log(`Scraping page ${page}...`);
+
+        // Fetch the page content
+        const response = await axios.get(url, {
+          timeout: 10000, // 10 seconds timeout
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          },
+        });
+
+        // Check for empty or invalid response
+        if (!response.data) {
+          console.warn(`Empty response for page ${page}`);
+          continue;
+        }
+
+        // Load HTML with Cheerio
+        const $ = cheerio.load(response.data);
+
+        // Get all non-sponsored elements
+        const elements = $("p.pcard a.cut-text")
+          .filter((i, element) => {
+            const $element = $(element);
+            const hasSpace =
+              $element.text().trim().includes(" ") ||
+              $element.text().trim().toLocaleLowerCase() === "bukkake";
+            return !hasSpace;
+          })
+          .get(); // Get the DOM elements array
+
+        console.log(`Found ${elements.length} elements on page ${page}`);
+
+        // Process elements sequentially
+        for (const element of elements) {
+          const $element = $(element);
+          const code = $element.text().trim().toLowerCase();
+
+          if (!code) continue;
+
+          // Check for existing movie
+          const existingMovie = await Movies.findOne({ code });
+          if (existingMovie) continue;
+
+          // Extract code label and check against whitelist
+          const codeLabel = code.split("-")[0];
+
+          if (allowedLabels.has(codeLabel)) {
+            allResults.push(code);
+          } else {
+            if (!labelsIgnored.includes(codeLabel)) {
+              labelsIgnored.push(codeLabel);
+            }
+          }
+        }
+      } catch (pageError) {
+        console.error(`Error scraping page ${page}:`, pageError.message);
+      }
+    }
+
+    // Remove duplicates
+    const uniqueScrapedData = [...new Set(allResults)];
+
+    // Return scraped data
+    res.json({
+      total: uniqueScrapedData.length,
+      data: uniqueScrapedData,
+      labelsIgnored,
+      start_page: start,
+      end_page: end,
+      pages_scraped: end - start + 1,
+    });
+  } catch (error) {
+    console.error("Scraping error:", error);
+    res.status(500).json({
+      error: "Failed to scrape data",
+      details: error.message,
+    });
+  }
+});
 
 // Keep the original route
 router.get("/scrape-jd", async (req, res) => {
@@ -351,7 +510,7 @@ router.get("/scrape-jd", async (req, res) => {
     if (!code) {
       return res.status(400).json({ error: "code is required" });
     }
-    const data = await scrapeMovieData2(code);
+    const data = await scrapeMovieData(code);
     if (!data) console.error("No response from URL");
     res.json(data);
   } catch (error) {

@@ -14,7 +14,7 @@ router.get("/:label", async (req, res) => {
 
   const labelData = await Labels.findOne(query, null, {
     sort: { maxNum: 1 },
-  });
+  }).populate("studio", "name slug");
 
   res.json(labelData ? labelData : "notFound");
 });
@@ -39,7 +39,7 @@ router.patch("/:label", async (req, res) => {
   const { label } = req.params;
 
   try {
-    const updatedLabel = await Labels.findOneAndUpdate({ label }, req.body);
+    const updatedLabel = await Labels.updateMany({ label }, req.body);
 
     if (!updatedLabel) {
       return res.status(404).json({ message: "Label not found" });

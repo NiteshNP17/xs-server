@@ -61,6 +61,22 @@ router.get("/", async (req, res) => {
   }
 });
 
+router.get("/list", async (req, res) => {
+  try {
+    const query = req.query.q;
+    const studios = await Studios.find(
+      query
+        ? {
+            name: { $regex: query, $options: "i" },
+          }
+        : {}
+    ).select("name");
+    res.json(studios);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.get("/:studioSlug", async (req, res) => {
   try {
     const studioSlug = req.params.studioSlug;
