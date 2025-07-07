@@ -8,6 +8,7 @@ const moviesSchema = new mongoose.Schema({
   maleCast: Array,
   release: String,
   runtime: Number,
+  came: { type: Number, default: 0 },
   tags: Array,
   tag2: [{ type: mongoose.Schema.Types.ObjectId, ref: "Tag" }],
   opt: Array,

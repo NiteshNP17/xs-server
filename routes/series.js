@@ -63,6 +63,18 @@ router.get("/", async (req, res) => {
   }
 });
 
+router.get("/list", async (req, res) => {
+  const query = req.query.q;
+  try {
+    const seriesList = await Series.find({
+      name: { $regex: query, $options: "i" },
+    });
+    res.json(seriesList);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
 router.post("/", async (req, res) => {
   try {
     const newSeries = new Series(req.body);

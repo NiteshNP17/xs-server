@@ -6,6 +6,7 @@ const cheerio = require("cheerio");
 const Labels = require("../models/labels");
 const Tags = require("../models/tags"); // Adjust the path as needed
 const Movies = require("../models/movies"); // Adjust the path as needed
+const Actors = require("../models/actors"); // Adjust the path as needed
 
 function convertToMinutes(timeString) {
   const [hours, minutes, seconds] = timeString.split(":").map(Number);
@@ -19,27 +20,6 @@ router.get("/scrape", async (req, res) => {
     if (!code) {
       return res.status(400).json({ error: "code is required" });
     }
-    /*const [codeLabel, codeNum] = code.split("-");
-    let posterUrl;
-
-
-    if (codeLabel !== "fc2") {
-      const labelData = await Labels.findOne(
-        { label: codeLabel, maxNum: { $gte: parseInt(codeNum) } },
-        null,
-        {
-          sort: { maxNum: 1 },
-        }
-      );
-
-      //generate poster url
-      posterUrl = `https://pics.pornfhd.com/s/mono/movie/adult/${
-        labelData?.imgPre || labelData?.prefix || ""
-      }${codeLabel}${codeNum}/${
-        labelData?.imgPre || labelData?.prefix || ""
-      }${codeLabel}${codeNum}pl.jpg`;
-      // }${codeLabel}${labelData?.is3digits ? codeNum : codeNumPadded}pl.jpg`;
-    }*/
 
     const url = `https://123av.com/en/dm1/v/${code}`;
 
@@ -82,6 +62,18 @@ router.get("/scrape", async (req, res) => {
   }
 });
 
+// Define categories to look for (add more as needed)
+const targetCategories = [
+  "Ass Lover",
+  "POV",
+  "Lotion",
+  "Orgy",
+  "Nymphomaniac",
+  "Slut",
+  "Lesbian",
+  "Nurse",
+];
+
 router.get("/scrape-jt", async (req, res) => {
   try {
     const { code } = req.query;
@@ -104,14 +96,6 @@ router.get("/scrape-jt", async (req, res) => {
       labelData?.prefix || ""
     }${codeLabel}${codeNumPadded}`;
 
-    /*//generate poster url
-    const posterUrl = `https://pics.pornfhd.com/s/mono/movie/adult/${
-      labelData?.imgPre || labelData?.prefix || ""
-    }${codeLabel}${codeNum}/${
-      labelData?.imgPre || labelData?.prefix || ""
-    }${codeLabel}${codeNum}pl.jpg`;
-    // }${codeLabel}${labelData?.is3digits ? codeNum : codeNumPadded}pl.jpg`;*/
-
     const response = await axios.get(url);
 
     if (!response) console.error("No response from URL");
@@ -127,6 +111,7 @@ router.get("/scrape-jt", async (req, res) => {
     const pElements = $("p.mb-1");
     let relDate = "";
     let runtime = "";
+    let tags = [];
 
     pElements.each((index, element) => {
       const $element = $(element);
@@ -149,23 +134,39 @@ router.get("/scrape-jt", async (req, res) => {
           .text()
           .trim()
           .split(" ")[0];
+      } else if (spanText === "Categories:") {
+        // Extract all category links
+        $element.find("a").each((_linkIndex, linkElement) => {
+          const categoryText = $(linkElement).text().trim();
+
+          if (categoryText === "Idol Video") {
+            tags.push("Softcore");
+          }
+
+          if (targetCategories.includes(categoryText)) {
+            tags.push(categoryText);
+          }
+
+          if (categoryText === "VR Exclusive") {
+            tags.push("VR");
+            const povIndex = tags.indexOf("POV");
+
+            if (povIndex !== -1) {
+              tags.splice(povIndex, 1);
+            }
+          }
+        });
       }
     });
 
-    const mrUrl = `https://fourhoi.com/${code}-uncensored-leak/preview.mp4`;
-    const isMr = await checkVideoExists(mrUrl);
+    const foundTags = await putTags(tags, code);
 
-    const data1 = {
+    res.json({
       title,
       relDate,
       runtime,
-      isMr,
-      // posterUrl,
-    };
-
-    // console.log("data1: ", data1);
-
-    res.json(data1);
+      tags: foundTags,
+    });
   } catch (error) {
     console.error("Scraping error: ", error.message);
     res.status(500).json({ error: "An error occurred while scraping" });
@@ -186,7 +187,7 @@ async function checkVideoExists(url) {
     if (error.response) {
       // The request was made and the server responded with a status code
       // that falls out of the range of 2xx
-      console.log("Video does not exist at the given URL.");
+      // console.log("Video does not exist at the given URL.");
       return false;
     } else if (error.request) {
       // The request was made but no response was received
@@ -313,6 +314,8 @@ async function scrapeMovieData(code) {
   const pElements = $("p.mb-1");
   let relDate = "";
   let runtime = 0;
+  let tags = [];
+  const castNames = [];
 
   pElements.each((index, element) => {
     const $element = $(element);
@@ -336,34 +339,75 @@ async function scrapeMovieData(code) {
         .trim()
         .slice(0, 3);
       runtime = parseInt(runtime);
+    } else if (spanText === "Idol(s)/Actress(es):") {
+      // Extract cast names from anchor tags within spans
+      $element.find("span a").each((_i, el) => {
+        const castName = $(el).text().trim().toLowerCase();
+        if (castName) {
+          castNames.push(castName);
+        }
+      });
     }
+
+    $element.find('a[rel="tag"]').each((_i, el) => {
+      const categoryText = $(el).text().trim();
+
+      if (categoryText === "Idol Video") {
+        tags.push("Softcore");
+      }
+
+      if (categoryText === "Black Man") {
+        tags.push("BBC");
+      }
+
+      if (targetCategories.includes(categoryText)) {
+        tags.push(categoryText);
+      }
+
+      if (categoryText === "VR Exclusive") {
+        tags.push("VR");
+        const povIndex = tags.indexOf("POV");
+
+        if (povIndex !== -1) {
+          tags.splice(povIndex, 1);
+        }
+      }
+
+      if (categoryText.startsWith("Hot Spring")) {
+        tags.push("Onsen");
+      }
+    });
   });
 
-  let tags = [];
+  const foundTags = await putTags(tags, code);
+  let cast = [];
 
-  // Check if a specific tag link with text "ABC" exists
-  const isPov =
-    $('a[rel="tag"]').filter(function () {
-      return $(this).text() === "POV";
-    }).length > 0;
+  try {
+    cast = await Actors.find({ name: { $in: castNames } });
+  } catch (err) {
+    console.error("Error finding cast:", err);
+  }
 
-  const isAsL =
-    $('a[rel="tag"]').filter(function () {
-      return $(this).text() === "Ass Lover";
-    }).length > 0;
+  return { title, relDate, runtime, tags: foundTags, cast };
+}
 
-  if (isPov) tags.push("pov");
-  if (isAsL) tags.push("ass");
-
-  const mrUrl = `https://fourhoi.com/${code}-uncensored-leak/preview.mp4`;
-  const isMr = await checkVideoExists(mrUrl);
+async function putTags(nameArr, code) {
+  const isMr = await checkVideoExists(
+    `https://fourhoi.com/${code}-uncensored-leak/preview.mp4`
+  );
   const isEn = await checkVideoExists(
     `https://fourhoi.com/${code}-english-subtitle/preview.mp4`
   );
-  if (isMr) tags.push("mr");
-  if (isEn) tags.push("en");
+  if (isMr) nameArr.push("MR");
+  if (isEn) nameArr.push("EN");
 
-  return { title, relDate, runtime, tags };
+  try {
+    const foundDocuments = await Tags.find({ name: { $in: nameArr } });
+    return foundDocuments;
+  } catch (error) {
+    console.error("Error finding tags:", error);
+    return [];
+  }
 }
 
 router.get("/scrape-actor-page", async (req, res) => {

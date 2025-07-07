@@ -531,9 +531,9 @@ router.post("/batch-create", async (req, res) => {
   try {
     const { cast, codes } = req.body;
 
-    if (!cast || !codes) {
+    if (!codes) {
       return res.status(400).json({
-        error: "Both 'cast' and 'codes' are required",
+        error: "'codes' are required",
       });
     }
 
@@ -562,36 +562,19 @@ router.post("/batch-create", async (req, res) => {
         // Scrape data
         const scrapedData = await scrapeMovieData(code);
         const mrUrl = `https://fourhoi.com/${code}-uncensored-leak/preview.mp4`;
-
-        const codeLabel = code.split("-")[0];
-        const scLabels = ["rebd", "oae", "fway"];
-        const vrLabels = ["vrkm", "urvrsp"];
-        let tag2data = [];
-
-        if (scLabels.includes(codeLabel))
-          tag2data.push(["67c3f348b4e420283fdcf283"]);
-        if (vrLabels.includes(codeLabel) || codeLabel.endsWith("vr"))
-          tag2data.push(["67c3f423b4e420283fdcf28b"]);
-        if (scrapedData.tags.includes("mr"))
-          tag2data.push(["67c3f414b4e420283fdcf289"]);
-        if (scrapedData.tags.includes("en"))
-          tag2data.push(["67c3f435b4e420283fdcf28c"]);
-        if (scrapedData.tags.includes("ass"))
-          tag2data.push(["67c3f2e2b4e420283fdcf27e"]);
-        if (scrapedData.tags.includes("pov"))
-          tag2data.push(["67c3f30ab4e420283fdcf27f"]);
-
-        tag2data = JSON.stringify(tag2data);
+        const tagIDs = scrapedData.tags?.map((tag) => tag._id);
 
         // Create new movie object
         const movieData = {
           code,
-          cast,
+          cast: JSON.stringify(scrapedData.cast?.map((actor) => actor._id)),
           title: scrapedData.title,
           release: scrapedData.relDate,
           runtime: scrapedData.runtime,
-          tag2: tag2data, // default empty array or whatever default you want
-          preview: scrapedData.tags.includes("mr") ? mrUrl : "", // default empty string or whatever default you want
+          tag2: JSON.stringify(tagIDs || []), // default empty array or whatever default you want
+          preview: scrapedData.tags?.some((tag) => tag.name === "MR")
+            ? mrUrl
+            : "", // default empty string or whatever default you want
           cover: null, // default null or whatever default you want
         };
 
@@ -786,6 +769,44 @@ router.delete("/:code", async (req, res) => {
       return res.status(400).json({ message: "Invalid movie code" });
     }
     res.status(500).json({ message: err.message });
+  }
+});
+
+// Route to handle liking a movie
+router.post("/came/:id", async (req, res) => {
+  try {
+    const movieCode = req.params.id;
+
+    // Find the movie and populate the cast
+    const movie = await Movies.findOne({ code: movieCode }).populate("cast");
+
+    if (!movie) {
+      return res.status(404).json({ error: "Movie not found" });
+    }
+
+    // Increment movie cames
+    movie.came += 1;
+    await movie.save();
+
+    // Increment cames for all cast members
+    if (movie.cast && movie.cast.length > 0) {
+      const castIds = movie.cast.map((actor) => actor._id);
+
+      await Actors.updateMany({ _id: { $in: castIds } }, { $inc: { came: 1 } });
+    }
+
+    res.json({
+      success: true,
+      message: "Movie and cast members camed successfully",
+      moviecames: movie.came,
+      castMembersUpdated: movie.cast.length,
+    });
+  } catch (error) {
+    console.error("Error liking movie:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
   }
 });
 

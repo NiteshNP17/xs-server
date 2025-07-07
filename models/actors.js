@@ -52,6 +52,10 @@ const actorsSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    came: {
+      type: Number,
+      default: 0,
+    },
     order: {
       type: Number,
       default: 99999.0,
@@ -66,7 +70,8 @@ const actorsSchema = new mongoose.Schema(
       { cup: -1 }, // Ascending date of birth
       // If you often sort by movie count or years active, you might want to add placeholders for those
       { numMovies: -1 },
-      { yearsActive: 1 },
+      { came: -1 },
+      // { yearsActive: 1 },
       { ageAtLatestRel: 1 }, // Add index for the new field
       { order: 1 }, // Add index for the new field
     ],
