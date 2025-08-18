@@ -72,6 +72,9 @@ const targetCategories = [
   "Slut",
   "Lesbian",
   "Nurse",
+  "School Swimsuits",
+  "Club Hostess & Sex Worker",
+  "Massage Parlor",
 ];
 
 router.get("/scrape-jt", async (req, res) => {
