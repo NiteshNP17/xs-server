@@ -14,15 +14,12 @@ const labelRoutes = require("./routes/labels");
 
 require("dotenv").config();
 
-const localHst = new RegExp();
-
 // CORS configuration
 const corsOptions = {
-  origin: [
-    process.env.FRONTEND_URL,
-    "http://localhost:5173",
-    "http://192.168.1.33:5173",
-  ],
+  origin:
+    process.env.NODE_ENV === "development"
+      ? true // Allow all origins in development
+      : [process.env.FRONTEND_URL],
   optionsSuccessStatus: 200,
 };
 app.use(cors(corsOptions));
