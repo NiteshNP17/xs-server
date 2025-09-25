@@ -141,122 +141,10 @@ router.get("/:name", getActor, (req, res) => {
 async function getActor(req, res, next) {
   let actor;
   try {
-    actor = await Actors.aggregate([
-      { $match: { name: req.params.name } },
-      {
-        $lookup: {
-          from: "movies",
-          let: { actorId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $in: ["$$actorId", "$cast"] },
-              },
-            },
-            { $sort: { release: -1 } },
-            { $limit: 1 },
-            { $project: { _id: 0, release: 1 } }, // Explicitly project release
-          ],
-          as: "latestMovie",
-        },
-      },
-      {
-        $lookup: {
-          from: "movies",
-          let: { actorId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $in: ["$$actorId", "$cast"] },
-              },
-            },
-            { $sort: { release: 1 } },
-            { $limit: 1 },
-            { $project: { _id: 0, release: 1 } }, // Explicitly project release
-          ],
-          as: "oldestMovie",
-        },
-      },
-      {
-        $addFields: {
-          latestMovie: {
-            $ifNull: [{ $arrayElemAt: ["$latestMovie.release", 0] }, null],
-          },
-          oldestMovie: {
-            $ifNull: [{ $arrayElemAt: ["$oldestMovie.release", 0] }, null],
-          },
-          ageAtLatestRelease: {
-            $cond: {
-              if: {
-                $and: [
-                  { $ne: ["$dob", null] },
-                  {
-                    $ne: [{ $arrayElemAt: ["$latestMovie.release", 0] }, null],
-                  },
-                ],
-              },
-              then: {
-                $floor: {
-                  $divide: [
-                    {
-                      $subtract: [
-                        {
-                          $toDate: {
-                            $arrayElemAt: ["$latestMovie.release", 0],
-                          },
-                        },
-                        { $toDate: "$dob" },
-                      ],
-                    },
-                    // Milliseconds in a year (1000 * 60 * 60 * 24 * 365.25)
-                    31557600000,
-                  ],
-                },
-              },
-              else: null,
-            },
-          },
-          yearsActive: {
-            $cond: {
-              if: {
-                $and: [
-                  {
-                    $ne: [{ $arrayElemAt: ["$oldestMovie.release", 0] }, null],
-                  },
-                  {
-                    $ne: [{ $arrayElemAt: ["$latestMovie.release", 0] }, null],
-                  },
-                ],
-              },
-              then: {
-                $floor: {
-                  $divide: [
-                    {
-                      $subtract: [
-                        {
-                          $toDate: {
-                            $arrayElemAt: ["$latestMovie.release", 0],
-                          },
-                        },
-                        {
-                          $toDate: {
-                            $arrayElemAt: ["$oldestMovie.release", 0],
-                          },
-                        },
-                      ],
-                    },
-                    // Milliseconds in a year (1000 * 60 * 60 * 24 * 365.25)
-                    31557600000,
-                  ],
-                },
-              },
-              else: null,
-            },
-          },
-        },
-      },
-      { $limit: 1 },
-    ]);
+    actor = await Actors.findOne({ name: req.params.name }).populate(
+      "tag2",
+      "name"
+    );
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
@@ -300,6 +188,9 @@ function bindActorData(actor, data) {
       waist: sizeSplit[1],
       hips: sizeSplit[2],
     };
+  }
+  if (data.tags) {
+    actor.tag2 = JSON.parse(data.tags);
   }
 }
 

@@ -65,6 +65,7 @@ router.get("/scrape", async (req, res) => {
 // Define categories to look for (add more as needed)
 const targetCategories = [
   "Ass Lover",
+  "Big Tits Lover",
   "POV",
   "Lotion",
   "Orgy",
@@ -599,6 +600,7 @@ router.get("/scrape-actor-data", async (req, res) => {
       sizes: null,
       height: null,
       cup: null,
+      jpName: null,
     };
 
     // Find the div with class "col-12"
@@ -634,6 +636,18 @@ router.get("/scrape-actor-data", async (req, res) => {
           const sizeText = sizeElement[0].nextSibling.nodeValue;
           if (sizeText) {
             actorData.sizes = sizeText.trim().slice(-0, -4);
+          }
+        }
+
+        // Find the <b> tag with "JP:" text and get the text after it
+        const jpElement = $(this).find('b:contains("JP:")');
+        if (jpElement.length) {
+          // Extract the text after the height label, removing quotes
+          const jpText = jpElement[0].nextSibling.nodeValue;
+          if (jpText) {
+            actorData.jpName = jpText.endsWith("- ")
+              ? jpText.substring(0, jpText.length - 3).trim()
+              : jpText.trim();
           }
         }
       }

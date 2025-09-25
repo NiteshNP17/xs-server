@@ -60,6 +60,7 @@ const actorsSchema = new mongoose.Schema(
       type: Number,
       default: 99999.0,
     },
+    tag2: [{ type: mongoose.Schema.Types.ObjectId, ref: "Tag" }],
   },
   {
     // Add compound indexes for more complex sorting scenarios

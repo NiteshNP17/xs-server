@@ -25,13 +25,37 @@ const buildFilter = async (queries) => {
   }
 
   if (queries.tag2Query) {
+    const tagArr = ["Chubby", "Big Tits"];
     const tagNames = queries.tag2Query.split(",").map((name) => name.trim());
 
     if (tagNames.length > 0) {
-      const tags = await Tags.find({ name: tagNames }).select("_id");
-      const tagsIds = tags.map((tag) => tag._id);
+      // Separate tagNames into excluded and regular tags
+      const excludedTagNames = tagNames.filter((name) => tagArr.includes(name));
+      const regularTagNames = tagNames.filter((name) => !tagArr.includes(name));
 
-      filter.tag2 = { $all: tagsIds };
+      // Handle regular tags (excluding tagArr elements)
+      if (regularTagNames.length > 0) {
+        const tags = await Tags.find({ name: regularTagNames }).select("_id");
+        const tagsIds = tags.map((tag) => tag._id);
+        filter.tag2 = { $all: tagsIds };
+      }
+
+      // Handle excluded tags separately - filter by actors who have these tags
+      if (excludedTagNames.length > 0) {
+        const excludedTags = await Tags.find({ name: excludedTagNames }).select(
+          "_id"
+        );
+        const excludedTagsIds = excludedTags.map((tag) => tag._id);
+
+        // Find actors who have these tags
+        const actorsWithTags = await Actors.find({
+          tag2: { $all: excludedTagsIds },
+        }).select("_id");
+        const actorIds = actorsWithTags.map((actor) => actor._id);
+
+        // Filter movies that have these actors in their cast
+        filter.cast = { $in: actorIds };
+      }
     }
   }
 
@@ -123,6 +147,14 @@ router.get("/", async (req, res) => {
             localField: "cast",
             foreignField: "_id",
             as: "cast",
+          },
+        },
+        {
+          $lookup: {
+            from: "tags",
+            localField: "tag2",
+            foreignField: "_id",
+            as: "tag2",
           },
         },
         {
